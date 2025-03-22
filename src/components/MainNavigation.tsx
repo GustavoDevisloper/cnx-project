@@ -1,5 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Book, BookOpen, Music, Settings, User, MessageCircleQuestion, LogOut, Calendar } from 'lucide-react';
+import { Home, Book, BookOpen, Music, Settings, User, MessageCircleQuestion, LogOut, Calendar, Menu, X } from 'lucide-react';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { isAuthenticated, isAdmin, signOut } from '@/services/authService';
 import { useState, useEffect, useCallback } from 'react';
@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 export function MainNavigation() {
   const [authenticated, setAuthenticated] = useState(false);
   const [admin, setAdmin] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navigate = useNavigate();
 
   // Safely check auth state with a useCallback to prevent memory leaks
@@ -56,6 +57,14 @@ export function MainNavigation() {
     
     // Navigate to home page after logout
     navigate('/');
+  };
+
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
   };
 
   return (
@@ -210,88 +219,162 @@ export function MainNavigation() {
                 <User className="w-5 h-5" />
               </NavLink>
             )}
+            
+            {/* Botão Hambúrguer para Mobile */}
+            <button 
+              className="md:hidden p-2 rounded-md text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:outline-none"
+              onClick={toggleMobileMenu}
+              aria-label="Menu"
+            >
+              {mobileMenuOpen ? (
+                <X className="w-6 h-6" />
+              ) : (
+                <Menu className="w-6 h-6" />
+              )}
+            </button>
           </div>
         </div>
       </div>
       
-      {/* Menu móvel - simplificado e com divisão clara */}
-      <div className="md:hidden border-t border-gray-200 dark:border-gray-700">
-        <div className="grid grid-cols-5 gap-1">
+      {/* Menu móvel - Menu Hambúrguer */}
+      <div 
+        className={`md:hidden fixed inset-0 z-50 bg-white dark:bg-gray-800 transform transition-transform duration-300 ease-in-out ${
+          mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
+        }`}
+        style={{ top: '64px' }} // Altura da barra de navegação
+      >
+        <div className="flex flex-col space-y-2 p-4">
           <NavLink
             to="/"
             className={({ isActive }) =>
-              `flex flex-col items-center py-2 ${
-                isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`
             }
+            onClick={closeMobileMenu}
           >
-            <Home className="w-5 h-5" />
-            <span className="text-xs mt-1">Início</span>
+            <Home className="w-5 h-5 mr-3" />
+            <span className="font-medium">Início</span>
           </NavLink>
           
           <NavLink
             to="/devotional"
             className={({ isActive }) =>
-              `flex flex-col items-center py-2 ${
-                isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`
             }
+            onClick={closeMobileMenu}
           >
-            <BookOpen className="w-5 h-5" />
-            <span className="text-xs mt-1">Devocionais</span>
+            <BookOpen className="w-5 h-5 mr-3" />
+            <span className="font-medium">Devocionais</span>
           </NavLink>
-          
+
           <NavLink
             to="/events"
             className={({ isActive }) =>
-              `flex flex-col items-center py-2 ${
-                isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`
             }
+            onClick={closeMobileMenu}
           >
-            <Calendar className="w-5 h-5" />
-            <span className="text-xs mt-1">Eventos</span>
+            <Calendar className="w-5 h-5 mr-3" />
+            <span className="font-medium">Eventos</span>
+          </NavLink>
+          
+          <NavLink
+            to="/biblia"
+            className={({ isActive }) =>
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`
+            }
+            onClick={closeMobileMenu}
+          >
+            <Book className="w-5 h-5 mr-3" />
+            <span className="font-medium">Bíblia</span>
           </NavLink>
           
           <NavLink
             to="/questions"
             className={({ isActive }) =>
-              `flex flex-col items-center py-2 ${
-                isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
               }`
             }
+            onClick={closeMobileMenu}
           >
-            <MessageCircleQuestion className="w-5 h-5" />
-            <span className="text-xs mt-1">Dúvidas</span>
+            <MessageCircleQuestion className="w-5 h-5 mr-3" />
+            <span className="font-medium">Dúvidas</span>
           </NavLink>
+          
+          <NavLink
+            to="/playlists"
+            className={({ isActive }) =>
+              `flex items-center px-4 py-3 rounded-md ${
+                isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+              }`
+            }
+            onClick={closeMobileMenu}
+          >
+            <Music className="w-5 h-5 mr-3" />
+            <span className="font-medium">Playlists</span>
+          </NavLink>
+          
+          {admin && (
+            <NavLink
+              to="/admin"
+              className={({ isActive }) =>
+                `flex items-center px-4 py-3 rounded-md ${
+                  isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`
+              }
+              onClick={closeMobileMenu}
+            >
+              <Settings className="w-5 h-5 mr-3" />
+              <span className="font-medium">Gerenciamento</span>
+            </NavLink>
+          )}
           
           {authenticated ? (
             <NavLink
               to="/profile"
               className={({ isActive }) =>
-                `flex flex-col items-center py-2 ${
-                  isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+                `flex items-center px-4 py-3 rounded-md ${
+                  isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`
               }
+              onClick={closeMobileMenu}
             >
-              <User className="w-5 h-5" />
-              <span className="text-xs mt-1">Perfil</span>
+              <User className="w-5 h-5 mr-3" />
+              <span className="font-medium">Perfil</span>
             </NavLink>
           ) : (
             <NavLink
               to="/login"
               className={({ isActive }) =>
-                `flex flex-col items-center py-2 ${
-                  isActive ? 'text-primary' : 'text-gray-600 dark:text-gray-400'
+                `flex items-center px-4 py-3 rounded-md ${
+                  isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                 }`
               }
+              onClick={closeMobileMenu}
             >
-              <User className="w-5 h-5" />
-              <span className="text-xs mt-1">Login</span>
+              <User className="w-5 h-5 mr-3" />
+              <span className="font-medium">Login</span>
             </NavLink>
           )}
         </div>
       </div>
+      
+      {/* Overlay para fechar o menu quando clicar fora */}
+      {mobileMenuOpen && (
+        <div 
+          className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={closeMobileMenu}
+          style={{ top: '64px' }} // Altura da barra de navegação
+        ></div>
+      )}
     </nav>
   );
 } 

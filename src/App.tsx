@@ -62,7 +62,7 @@ function App() {
                     </PrivateRoute>
                   } />
                   <Route path="questions" element={
-                    <PrivateRoute requireLeader>
+                    <PrivateRoute>
                       <Questions />
                     </PrivateRoute>
                   } />
