@@ -1,0 +1,625 @@
+import { supabase } from './supabaseClient';
+import { toast } from '@/hooks/use-toast';
+
+// Tipos
+export interface User {
+  id: string;
+  email: string;
+  role: 'admin' | 'leader' | 'user';
+  username?: string;
+  display_name?: string;
+  first_name?: string;
+  phone_number?: string;
+  bio?: string;
+  avatar_url?: string;
+  created_at?: string;
+  profile_views?: number;
+}
+
+/**
+ * Realiza o login do usuário com email e senha
+ * Sistema simplificado que apenas verifica credenciais e busca o perfil
+ */
+export async function signInWithEmail(email: string, password: string): Promise<User | null> {
+  try {
+    // 1. Autenticar com Supabase
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    if (error) {
+      toast({
+        title: "Erro no login",
+        description: "Email ou senha incorretos",
+        variant: "destructive"
+      });
+      return null;
+    }
+    
+    const userId = data.user.id;
+    
+    // 2. Buscar perfil na tabela uuid
+    const { data: profile, error: profileError } = await supabase
+      .from("uuid")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    
+    if (profileError) {
+      toast({
+        title: "Erro ao buscar perfil",
+        description: "Não foi possível recuperar seus dados",
+        variant: "destructive"
+      });
+      return null;
+    }
+    
+    // 3. Armazenar para acesso rápido
+    localStorage.setItem('current_user', JSON.stringify(profile));
+    
+    return profile as User;
+  } catch (error) {
+    toast({
+      title: "Erro no login",
+      description: "Ocorreu um erro inesperado",
+      variant: "destructive"
+    });
+    return null;
+  }
+}
+
+/**
+ * Registra um novo usuário com email e senha
+ * Sistema simplificado que apenas registra no auth e na tabela uuid
+ */
+export async function signUpWithEmail(
+  email: string, 
+  password: string, 
+  firstName: string, 
+  phoneNumber: string
+): Promise<User | null> {
+  try {
+    // 1. Registrar no auth do Supabase
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+    
+    if (error) {
+      if (error.message.includes("already registered")) {
+        toast({
+          title: "Email já registrado",
+          description: "Este email já está sendo usado",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Erro no registro",
+          description: error.message,
+          variant: "destructive"
+        });
+      }
+      return null;
+    }
+    
+    if (!data.user) {
+      toast({
+        title: "Erro no registro",
+        description: "Não foi possível criar a conta",
+        variant: "destructive"
+      });
+      return null;
+    }
+    
+    // 2. Criar perfil na tabela uuid
+    const userId = data.user.id;
+    const displayName = firstName || email.split('@')[0];
+    
+    const newUser = {
+      id: userId,
+      email: email,
+      username: displayName,
+      first_name: firstName,
+      display_name: displayName,
+      phone_number: phoneNumber,
+      role: "user",
+      created_at: new Date().toISOString(),
+    };
+    
+    const { data: profile, error: profileError } = await supabase
+      .from("uuid")
+      .insert([newUser])
+      .select()
+      .single();
+    
+    if (profileError) {
+      toast({
+        title: "Erro ao criar perfil",
+        description: "Conta criada, mas não foi possível salvar seus dados",
+        variant: "destructive"
+      });
+      return null;
+    }
+    
+    // 3. Armazenar para acesso rápido e fazer login automático
+    localStorage.setItem('current_user', JSON.stringify(profile));
+    
+    // Login automático
+    await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    
+    toast({
+      title: "Conta criada",
+      description: "Registro concluído com sucesso!",
+    });
+    
+    return profile as User;
+  } catch (error) {
+    toast({
+      title: "Erro no registro",
+      description: "Ocorreu um erro inesperado",
+      variant: "destructive"
+    });
+    return null;
+  }
+}
+
+/**
+ * Obter usuário atual
+ * Versão simplificada que apenas verifica a sessão e busca dados do perfil
+ */
+export async function getCurrentUser(): Promise<User | null> {
+  try {
+    // 1. Verificar se há sessão
+    const { data } = await supabase.auth.getSession();
+    
+    if (!data.session) {
+      return null;
+    }
+    
+    // 2. Tentar usar dados em cache primeiro
+    const cachedUser = localStorage.getItem('current_user');
+    if (cachedUser) {
+      return JSON.parse(cachedUser) as User;
+    }
+    
+    // 3. Buscar da tabela se não encontrou em cache
+    const userId = data.session.user.id;
+    const { data: profile } = await supabase
+      .from("uuid")
+      .select("*")
+      .eq("id", userId)
+      .single();
+    
+    if (profile) {
+      localStorage.setItem('current_user', JSON.stringify(profile));
+      return profile as User;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error("Erro ao buscar usuário atual:", error);
+    return null;
+  }
+}
+
+/**
+ * Verifica se o usuário está autenticado
+ * Versão simplificada que apenas verifica a sessão
+ */
+export const isAuthenticated = async (): Promise<boolean> => {
+  try {
+    const { data } = await supabase.auth.getSession();
+    return !!data.session;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
+ * Realiza o logout do usuário
+ * Versão simplificada que apenas faz logout e limpa dados
+ */
+export const signOut = async (): Promise<boolean> => {
+  try {
+    // Limpar localStorage
+    localStorage.removeItem('current_user');
+    
+    // Fazer logout no Supabase
+    await supabase.auth.signOut();
+    
+    toast({
+      title: "Logout realizado",
+      description: "Você saiu da sua conta com sucesso",
+    });
+    
+    return true;
+  } catch (error) {
+    toast({
+      title: "Erro ao sair",
+      description: "Não foi possível fazer logout",
+      variant: "destructive"
+    });
+    return false;
+  }
+};
+
+/**
+ * Verifica se o usuário é admin
+ */
+export const isAdmin = async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  return user?.role === 'admin';
+};
+
+/**
+ * Verifica se o usuário é líder ou admin
+ */
+export const isLeader = async (): Promise<boolean> => {
+  const user = await getCurrentUser();
+  return user?.role === 'leader' || user?.role === 'admin';
+};
+
+// Login com Google
+export const signInWithGoogle = async () => {
+  try {
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`
+      }
+    });
+
+    if (error) throw error;
+    return data;
+  } catch (error: any) {
+    toast({
+      title: "Erro ao fazer login com Google",
+      description: error.message,
+      variant: "destructive"
+    });
+    return null;
+  }
+};
+
+// Buscar e armazenar dados do perfil do usuário
+const fetchAndStoreUserProfile = async (userId: string): Promise<User | null> => {
+  console.log(`🔍 Buscando perfil do usuário ${userId}...`);
+  try {
+    // Buscar dados do usuário no banco
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+      
+    if (error) {
+      console.error(`❌ Erro ao buscar perfil:`, error);
+      
+      // Se o erro for NOT_FOUND (usuário não existe), vamos ver se há um registro auth
+      if (error.code === 'PGRST116') {
+        console.log(`⚠️ Perfil não encontrado para usuário ${userId}. Verificando se é um novo usuário...`);
+        const { data: authUser } = await supabase.auth.getUser();
+        
+        if (authUser && authUser.user) {
+          console.log(`👤 Dados de autenticação encontrados. Criando perfil para ${authUser.user.email}...`);
+          
+          // Criar perfil básico para o usuário - usando snake_case para os campos
+          const newUser: User = {
+            id: userId,
+            email: authUser.user.email || '',
+            role: 'user',
+            username: authUser.user.email?.split('@')[0] || '',
+            first_name: authUser.user.email?.split('@')[0] || '',
+            created_at: new Date().toISOString(),
+          };
+          
+          // Inserir na tabela de usuários
+          const { data: insertData, error: insertError } = await supabase
+            .from('users')
+            .insert(newUser)
+            .select()
+            .single();
+            
+          if (insertError) {
+            console.error(`❌ Erro ao criar perfil:`, insertError);
+            return null;
+          }
+          
+          console.log(`✅ Perfil criado com sucesso para ${newUser.email}`);
+          localStorage.setItem('current_user', JSON.stringify(insertData || newUser));
+          return insertData || newUser;
+        }
+      }
+      
+      return null;
+    }
+    
+    if (data) {
+      console.log(`✅ Perfil encontrado para ${data.email}`);
+      localStorage.setItem('current_user', JSON.stringify(data));
+      return data;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error(`❌ Erro geral ao buscar perfil:`, error);
+    return null;
+  }
+};
+
+// Atualizar papel do usuário
+export const updateUserRole = async (userId: string, newRole: string) => {
+  try {
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update({ role: newRole, updated_at: new Date().toISOString() })
+      .eq('id', userId)
+      .select('id, email, username, role, display_name, bio, avatar_url, created_at, updated_at, profile_views')
+      .single();
+
+    if (error) throw error;
+    return updatedUser;
+  } catch (error) {
+    console.error('Erro ao atualizar função do usuário:', error);
+    throw error;
+  }
+};
+
+// Atualizar perfil do usuário
+export const updateUserProfile = async (userId: string, userData: Partial<User>) => {
+  try {
+    // Converter camelCase para snake_case
+    const dbData = {
+      display_name: userData.display_name,
+      bio: userData.bio,
+      avatar_url: userData.avatar_url
+    };
+
+    const { data, error } = await supabase
+      .from('users')
+      .update(dbData)
+      .eq('id', userId)
+      .select('id, email, username, role, display_name, bio, avatar_url, created_at, updated_at, profile_views')
+      .single();
+    
+    if (error) throw error;
+    
+    if (data) {
+      // Converter snake_case de volta para camelCase
+      const userResponse: User = {
+        ...data,
+        display_name: data.display_name,
+        avatar_url: data.avatar_url,
+        created_at: data.created_at
+      };
+      
+      // Atualizar cache local
+      localStorage.setItem('current_user', JSON.stringify(userResponse));
+      
+      // Emitir evento de mudança de estado
+      window.dispatchEvent(new Event('auth-state-changed'));
+      
+      return userResponse;
+    }
+    
+    return null;
+  } catch (error: any) {
+    console.error("Erro ao atualizar perfil:", error);
+    throw error;
+  }
+};
+
+// Obter usuário por ID
+export const getUserById = async (userId: string): Promise<User | null> => {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .single();
+    
+    if (error) {
+      console.error("Erro ao buscar usuário:", error);
+      return null;
+    }
+    
+    return data as User;
+  } catch (error) {
+    console.error("Erro ao buscar usuário:", error);
+    return null;
+  }
+};
+
+export const getAllUsers = async () => {
+  try {
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('id, email, username, role, display_name, bio, avatar_url, created_at, updated_at, profile_views')
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return users;
+  } catch (error) {
+    console.error('Erro ao buscar usuários:', error);
+    throw error;
+  }
+};
+
+// Atualizar papel do usuário por email
+export const updateUserRoleByEmail = async (email: string, newRole: string) => {
+  try {
+    const { data: user, error: userError } = await supabase
+      .from('users')
+      .select('id')
+      .eq('email', email)
+      .single();
+    
+    if (userError || !user) {
+      throw new Error('Usuário não encontrado');
+    }
+    
+    const { data: updatedUser, error } = await supabase
+      .from('users')
+      .update({ role: newRole, updated_at: new Date().toISOString() })
+      .eq('id', user.id)
+      .select('id, email, username, role, display_name, bio, avatar_url, created_at, updated_at, profile_views')
+      .single();
+
+    if (error) throw error;
+    return updatedUser;
+  } catch (error) {
+    console.error('Erro ao atualizar função do usuário:', error);
+    throw error;
+  }
+};
+
+/**
+ * Limpa completamente todos os dados de autenticação do Supabase
+ * Isso inclui localStorage, sessionStorage e cookies específicos
+ */
+export function clearAllAuthData(): void {
+  console.log("🧹 Iniciando limpeza completa de dados de autenticação...");
+  
+  // Gerar um ID único para esta operação de limpeza
+  const cleanupId = Date.now().toString();
+  
+  // Garantir que o flag de logout está definido para evitar verificações durante a limpeza
+  window.sessionStorage.setItem('logout_in_progress', 'true');
+  window.sessionStorage.setItem('cleanup_id', cleanupId);
+  
+  // Desativar temporariamente os listeners de eventos do storage
+  const originalAddEventListener = window.addEventListener;
+  const originalDispatchEvent = window.dispatchEvent;
+  
+  // Flag para prevenir eventos auth-state-changed durante a limpeza
+  let isCleaningAuth = true;
+  
+  try {
+    // Substituir temporariamente o dispatchEvent para suprimir eventos de storage e auth
+    window.dispatchEvent = function(event) {
+      if (event.type === 'storage' || event.type === 'auth-state-changed') {
+        console.log(`🛑 Evento de ${event.type} suprimido para evitar loops`);
+        return true;
+      }
+      return originalDispatchEvent.apply(this, [event]);
+    };
+    
+    // 1. Limpar localStorage
+    console.log("🧹 Limpando localStorage...");
+    const keysToRemove = [
+      'current_user',
+      'supabase.auth.token',
+      'sb-access-token',
+      'sb-refresh-token',
+      'supabase.auth.data',
+      'sb-provider-token',
+      'supabase-auth-token',
+      'sb-phplnehnmnqywqzzzytg-auth-token',
+      'sb:token',
+      'sb:token:phplnehnmnqywqzzzytg', // Incluir projeto específico
+      'supabase.auth.expires_at',
+      'supabase.auth.token.expiresAt',
+      // Adicionar qualquer outro padrão possível
+    ];
+    
+    // Remover chaves específicas
+    keysToRemove.forEach(key => {
+      if (localStorage.getItem(key)) {
+        console.log(`   🗑️ Removendo ${key} do localStorage`);
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // Buscar e remover todas as chaves que começam com 'sb-' ou 'supabase'
+    const allLocalStorageKeys = Object.keys(localStorage);
+    allLocalStorageKeys.forEach(key => {
+      if (key.startsWith('sb-') || key.startsWith('supabase')) {
+        console.log(`   🗑️ Removendo chave dinâmica ${key} do localStorage`);
+        localStorage.removeItem(key);
+      }
+    });
+    
+    // 2. Limpar sessionStorage
+    console.log("🧹 Limpando sessionStorage...");
+    const sessionKeysToRemove = [
+      'supabase.auth.token',
+      'sb-access-token',
+      'sb-refresh-token',
+      'sb-phplnehnmnqywqzzzytg-auth-token',
+      'sb:token',
+      'supabase.auth.expires_at',
+    ];
+    
+    // Remover chaves específicas
+    sessionKeysToRemove.forEach(key => {
+      if (sessionStorage.getItem(key)) {
+        console.log(`   🗑️ Removendo ${key} do sessionStorage`);
+        sessionStorage.removeItem(key);
+      }
+    });
+    
+    // Buscar e remover todas as chaves que começam com 'sb-' ou 'supabase'
+    const allSessionStorageKeys = Object.keys(sessionStorage);
+    allSessionStorageKeys.forEach(key => {
+      if (key.startsWith('sb-') || key.startsWith('supabase')) {
+        console.log(`   🗑️ Removendo chave dinâmica ${key} do sessionStorage`);
+        sessionStorage.removeItem(key);
+      }
+    });
+    
+    // 3. Limpar cookies específicos do Supabase
+    console.log("🧹 Limpando cookies relacionados ao Supabase...");
+    const cookiesToRemove = [
+      'sb-access-token',
+      'sb-refresh-token',
+      'supabase-auth-token',
+      '__stripe_mid',
+      '__stripe_sid',
+      'sb:token',
+      'sb-phplnehnmnqywqzzzytg-auth-token',
+      'sb-provider-token',
+    ];
+    
+    cookiesToRemove.forEach(cookieName => {
+      document.cookie = `${cookieName}=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;`;
+      console.log(`   🗑️ Removendo cookie ${cookieName}`);
+    });
+    
+    // 4. Tentar limpar a sessão atual do Supabase
+    console.log("🧹 Tentando limpar a sessão do Supabase Auth (sem validação)...");
+    try {
+      // Evitar o uso de promessas para não causar loops assíncronos
+      // Em vez disso, simplesmente tentar fazer o signOut sem esperar
+      supabase.auth.signOut();
+    } catch (error) {
+      console.error("⚠️ Erro ao tentar limpar sessão do Supabase:", error);
+    }
+    
+    console.log("✅ Limpeza completa de dados de autenticação finalizada");
+  } finally {
+    // Restaurar o comportamento original após a conclusão
+    window.dispatchEvent = originalDispatchEvent;
+    
+    // Verificar se ainda somos o processo de limpeza ativo
+    // (para evitar remover a flag se outra limpeza foi iniciada)
+    if (window.sessionStorage.getItem('cleanup_id') === cleanupId) {
+      // Definir um temporizador para evitar verificações imediatas de autenticação
+      // Mas com um tempo menor para não bloquear o usuário por muito tempo
+      setTimeout(() => {
+        if (window.sessionStorage.getItem('cleanup_id') === cleanupId) {
+          window.sessionStorage.removeItem('logout_in_progress');
+          window.sessionStorage.removeItem('cleanup_id');
+          console.log("✅ Período de resfriamento de autenticação finalizado");
+        } else {
+          console.log("⚠️ Outra limpeza foi iniciada, mantendo flag de logout");
+        }
+      }, 1000);
+    } else {
+      console.log("⚠️ Outra limpeza foi iniciada, mantendo flag de logout");
+    }
+  }
+} 
