@@ -393,8 +393,8 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
       title: "Comentário adicionado",
       description: "Seu comentário foi adicionado com sucesso"
     });
-    
-    return {
+          
+          return {
       id: data.id,
       text: data.content,
       author: data.users?.first_name || data.users?.username || 'Usuário',

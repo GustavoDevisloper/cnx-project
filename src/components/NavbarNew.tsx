@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Book, Music, User, MessageCircleQuestion, LogIn, LogOut, UserCircle, Settings, Calendar, Home, BookOpen, HelpCircle } from "lucide-react";
+import { Book, Music, User, MessageCircleQuestion, LogIn, LogOut, UserCircle, Settings, Calendar, Home, BookOpen, HelpCircle, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isAuthenticated, signOut, getCurrentUser } from "@/services/authService";
@@ -19,6 +19,7 @@ const NavbarNew = () => {
   const [scrolled, setScrolled] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -164,17 +165,23 @@ const NavbarNew = () => {
     navigate('/profile');
   };
 
-  const [isOpen, setIsOpen] = useState(false);
+  const toggleMobileMenu = () => {
+    setMobileMenuOpen(!mobileMenuOpen);
+  };
+
+  const closeMobileMenu = () => {
+    setMobileMenuOpen(false);
+  };
 
   return (
     <header 
       className={cn(
         "fixed top-0 left-0 right-0 z-50 transition-all duration-300 py-4 px-6",
-        scrolled ? "bg-background/80 backdrop-blur-lg shadow-sm" : "bg-transparent"
+        scrolled ? "bg-background/90 backdrop-blur-lg shadow-sm" : "bg-transparent"
       )}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <NavLink to="/" className="flex items-center space-x-2">
+        <NavLink to="/" className="flex items-center space-x-2" onClick={closeMobileMenu}>
           <span className="text-xl font-semibold">Conexão Jovem</span>
         </NavLink>
         
@@ -187,7 +194,7 @@ const NavbarNew = () => {
           </NavLink>
           
           <NavLink 
-            to="/devotionals"
+            to="/devotional"
             className={({isActive}) => cn("nav-link flex items-center gap-1.5", isActive && "active")}
           >
             <Book size={16} />
@@ -278,73 +285,178 @@ const NavbarNew = () => {
               </Button>
             )
           )}
+          
+          {/* Botão Menu Hambúrguer para dispositivos móveis */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden focus:outline-none"
+            onClick={toggleMobileMenu}
+            aria-label="Menu"
+          >
+            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+          </Button>
         </div>
       </div>
 
-      {/* Mobile Navigation */}
-      <div
-        className={`md:hidden fixed inset-0 z-50 bg-background transform ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        } transition-transform duration-300 ease-in-out`}
+      {/* Menu Mobile - Slide-in */}
+      <div 
+        className={`fixed inset-0 bg-background dark:bg-gray-900 z-50 transition-transform duration-300 shadow-xl md:hidden ${
+          mobileMenuOpen ? 'translate-x-0' : 'translate-x-full'
+        }`}
+        style={{ top: '72px' }} // Altura do cabeçalho
       >
-        <div className="px-4 py-8 flex flex-col gap-4">
-          <NavLink
+        <div className="flex flex-col space-y-1 p-6">
+          <NavLink 
             to="/"
-            className="flex items-center p-2 rounded-md hover:bg-muted"
-            onClick={() => setIsOpen(false)}
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
           >
             <Home className="mr-3 h-5 w-5" />
             <span>Início</span>
           </NavLink>
           
-          <NavLink
-            to="/devotionals"
-            className="flex items-center p-2 rounded-md hover:bg-muted"
-            onClick={() => setIsOpen(false)}
+          <NavLink 
+            to="/devotional"
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
           >
-            <BookOpen className="mr-3 h-5 w-5" />
+            <Book className="mr-3 h-5 w-5" />
             <span>Devocional</span>
           </NavLink>
           
-          <NavLink
+          <NavLink 
             to="/questions"
-            className="flex items-center p-2 rounded-md hover:bg-muted"
-            onClick={() => setIsOpen(false)}
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
           >
-            <HelpCircle className="mr-3 h-5 w-5" />
+            <MessageCircleQuestion className="mr-3 h-5 w-5" />
             <span>Dúvidas</span>
           </NavLink>
           
-          <NavLink
+          <NavLink 
             to="/events"
-            className="flex items-center p-2 rounded-md hover:bg-muted"
-            onClick={() => setIsOpen(false)}
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
           >
             <Calendar className="mr-3 h-5 w-5" />
             <span>Eventos</span>
           </NavLink>
           
-          <NavLink
+          <NavLink 
             to="/playlists"
-            className="flex items-center p-2 rounded-md hover:bg-muted"
-            onClick={() => setIsOpen(false)}
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
           >
             <Music className="mr-3 h-5 w-5" />
             <span>Playlists</span>
           </NavLink>
           
           {authenticated && currentUser?.role === 'admin' && (
-            <NavLink
+            <NavLink 
               to="/admin"
-              className="flex items-center p-2 rounded-md hover:bg-muted"
-              onClick={() => setIsOpen(false)}
+              className={({isActive}) => cn(
+                "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+                isActive 
+                  ? "bg-primary/20 text-primary font-semibold" 
+                  : "text-foreground hover:bg-muted"
+              )}
+              onClick={closeMobileMenu}
             >
               <Settings className="mr-3 h-5 w-5" />
               <span>Gerenciamento</span>
             </NavLink>
           )}
+          
+          <div className="border-t border-border my-4 pt-2">
+            {authenticated ? (
+              <>
+                <NavLink 
+                  to="/profile"
+                  className={({isActive}) => cn(
+                    "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+                    isActive 
+                      ? "bg-primary/20 text-primary font-semibold" 
+                      : "text-foreground hover:bg-muted"
+                  )}
+                  onClick={closeMobileMenu}
+                >
+                  <User className="mr-3 h-5 w-5" />
+                  <span>Meu Perfil</span>
+                </NavLink>
+                
+                <button
+                  className="w-full flex items-center px-4 py-3 rounded-md text-base text-left text-foreground hover:bg-muted transition-colors"
+                  onClick={() => {
+                    closeMobileMenu();
+                    handleLogout();
+                  }}
+                >
+                  <LogOut className="mr-3 h-5 w-5" />
+                  <span>Sair</span>
+                </button>
+              </>
+            ) : (
+              <NavLink 
+                to="/login"
+                className={({isActive}) => cn(
+                  "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+                  isActive 
+                    ? "bg-primary/20 text-primary font-semibold" 
+                    : "text-foreground hover:bg-muted"
+                )}
+                onClick={closeMobileMenu}
+              >
+                <LogIn className="mr-3 h-5 w-5" />
+                <span>Entrar</span>
+              </NavLink>
+            )}
+          </div>
         </div>
+        
+        {/* Botão de fechar visível dentro do menu */}
+        <button 
+          className="absolute top-4 right-4 p-2 rounded-full bg-muted text-foreground"
+          onClick={closeMobileMenu}
+          aria-label="Fechar menu"
+        >
+          <X className="h-5 w-5" />
+        </button>
       </div>
+      
+      {/* Overlay para fechar o menu quando clicar fora */}
+      {mobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 md:hidden"
+          onClick={closeMobileMenu}
+          style={{ top: '72px' }}
+        ></div>
+      )}
     </header>
   );
 };
