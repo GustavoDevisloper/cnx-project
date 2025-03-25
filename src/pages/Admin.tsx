@@ -6,10 +6,11 @@ import UsersList from "@/components/UsersList";
 import LeaderManagement from "@/components/LeaderManagement";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Calendar, MessageCircleQuestion, Music, Settings, FileText, BarChart } from "lucide-react";
+import { PlusCircle, Users, Calendar, MessageCircleQuestion, Music, Settings, FileText, BarChart, RefreshCw } from "lucide-react";
 import EventsList from "@/components/EventsList";
 import QuestionsList from "@/components/QuestionsList";
 import { toast } from "@/hooks/use-toast";
+import { DashboardStats, getDashboardStats } from "@/services/statsService";
 
 export default function Admin() {
   const [loading, setLoading] = useState(true);
@@ -19,6 +20,36 @@ export default function Admin() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const defaultTab = searchParams.get('tab') || 'dashboard';
+  
+  // Estado para as estatísticas
+  const [stats, setStats] = useState<DashboardStats>({
+    usersCount: 0,
+    eventsCount: 0,
+    devotionalsCount: 0,
+    loading: true,
+    error: null
+  });
+  
+  // Função para carregar as estatísticas
+  const loadStats = async () => {
+    setStats(prev => ({ ...prev, loading: true, error: null }));
+    try {
+      const dashboardStats = await getDashboardStats();
+      setStats(dashboardStats);
+    } catch (error: any) {
+      console.error("Erro ao carregar estatísticas:", error);
+      setStats(prev => ({
+        ...prev,
+        loading: false,
+        error: error.message || "Erro ao carregar estatísticas"
+      }));
+      toast({
+        title: "Erro ao carregar estatísticas",
+        description: "Não foi possível obter os dados do servidor",
+        variant: "destructive"
+      });
+    }
+  };
   
   useEffect(() => {
     document.title = "Conexão Jovem | Administração";
@@ -68,6 +99,9 @@ export default function Admin() {
             description: "Você não possui permissões para acessar esta área",
             variant: "destructive"
           });
+        } else {
+          // Se tem permissão, carrega as estatísticas
+          loadStats();
         }
       } catch (error) {
         console.error("Erro ao verificar permissões:", error);
@@ -96,6 +130,13 @@ export default function Admin() {
       window.removeEventListener('auth-state-changed', handleAuthChanged);
     };
   }, []);
+
+  // Efeito para carregar estatísticas quando a aba do dashboard é selecionada
+  useEffect(() => {
+    if (defaultTab === 'dashboard' && hasAccess && !loading) {
+      loadStats();
+    }
+  }, [defaultTab, hasAccess, loading]);
 
   if (loading) {
     return (
@@ -127,37 +168,115 @@ export default function Admin() {
     <div className="container py-10">
       <h1 className="text-3xl font-bold mb-6">Painel Administrativo</h1>
       
-      <Tabs defaultValue={defaultTab} value={defaultTab}>
+      <Tabs defaultValue={defaultTab} value={defaultTab} onValueChange={(value) => {
+        navigate(`/admin?tab=${value}`, { replace: true });
+      }}>
         <TabsList className="mb-4">
-          <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
-          <TabsTrigger value="events">Eventos</TabsTrigger>
-          <TabsTrigger value="questions">Dúvidas</TabsTrigger>
-          {isAdminUser && <TabsTrigger value="users">Usuários</TabsTrigger>}
-          <TabsTrigger value="leaders">Líderes</TabsTrigger>
-          <TabsTrigger value="content">Conteúdo</TabsTrigger>
+          <TabsTrigger 
+            value="dashboard" 
+            onClick={() => navigate('/admin?tab=dashboard', { replace: true })}
+          >
+            <BarChart className="h-4 w-4 mr-1.5" />
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger 
+            value="events" 
+            onClick={() => navigate('/admin?tab=events', { replace: true })}
+          >
+            <Calendar className="h-4 w-4 mr-1.5" />
+            Eventos
+          </TabsTrigger>
+          <TabsTrigger 
+            value="questions" 
+            onClick={() => navigate('/admin?tab=questions', { replace: true })}
+          >
+            <MessageCircleQuestion className="h-4 w-4 mr-1.5" />
+            Dúvidas
+          </TabsTrigger>
+          {isAdminUser && (
+            <TabsTrigger 
+              value="users" 
+              onClick={() => navigate('/admin?tab=users', { replace: true })}
+            >
+              <Users className="h-4 w-4 mr-1.5" />
+              Usuários
+            </TabsTrigger>
+          )}
+          <TabsTrigger 
+            value="leaders" 
+            onClick={() => navigate('/admin?tab=leaders', { replace: true })}
+          >
+            <Users className="h-4 w-4 mr-1.5" />
+            Líderes
+          </TabsTrigger>
+          <TabsTrigger 
+            value="content" 
+            onClick={() => navigate('/admin?tab=content', { replace: true })}
+          >
+            <FileText className="h-4 w-4 mr-1.5" />
+            Conteúdo
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="dashboard" className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <Card>
               <CardHeader className="pb-2">
-                <CardTitle className="text-lg">Estatísticas</CardTitle>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-lg">Estatísticas</CardTitle>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={loadStats} 
+                    disabled={stats.loading}
+                    className="h-8 w-8 p-0"
+                    title="Atualizar estatísticas"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${stats.loading ? 'animate-spin' : ''}`} />
+                    <span className="sr-only">Atualizar estatísticas</span>
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Usuários</span>
-                    <span className="font-medium">24</span>
+                {stats.error ? (
+                  <div className="py-2 text-center text-sm text-destructive">
+                    <p>Erro ao carregar estatísticas.</p>
+                    <Button 
+                      variant="link" 
+                      className="p-0 h-auto text-sm" 
+                      onClick={loadStats}
+                    >
+                      Tentar novamente
+                    </Button>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Eventos</span>
-                    <span className="font-medium">12</span>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Usuários</span>
+                      {stats.loading ? (
+                        <div className="h-4 w-8 bg-muted animate-pulse rounded"></div>
+                      ) : (
+                        <span className="font-medium">{stats.usersCount}</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Eventos</span>
+                      {stats.loading ? (
+                        <div className="h-4 w-8 bg-muted animate-pulse rounded"></div>
+                      ) : (
+                        <span className="font-medium">{stats.eventsCount}</span>
+                      )}
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Devocionais</span>
+                      {stats.loading ? (
+                        <div className="h-4 w-8 bg-muted animate-pulse rounded"></div>
+                      ) : (
+                        <span className="font-medium">{stats.devotionalsCount}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Devocionais</span>
-                    <span className="font-medium">45</span>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
             
@@ -177,7 +296,14 @@ export default function Admin() {
                 <CardTitle className="text-lg">Ações Rápidas</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
-                <Button variant="outline" className="w-full justify-start" onClick={() => navigate('/devotional/new')}>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-start" 
+                  onClick={() => {
+                    console.log("Navegando para /devotional/new");
+                    navigate('/devotional/new');
+                  }}
+                >
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Novo Devocional
                 </Button>
@@ -239,13 +365,17 @@ export default function Admin() {
         </TabsContent>
         
         {isAdminUser && (
-          <TabsContent value="users">
+          <TabsContent value="users" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Gerenciar Usuários</CardTitle>
-                <CardDescription>
-                  Visualize todos os usuários cadastrados no sistema
-                </CardDescription>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Gerenciar Usuários</CardTitle>
+                    <CardDescription>
+                      Visualize todos os usuários cadastrados no sistema
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 <UsersList />
@@ -254,66 +384,86 @@ export default function Admin() {
           </TabsContent>
         )}
 
-        <TabsContent value="leaders">
-          <div className="space-y-6">
-            <LeaderManagement />
-            
-            <Card>
-              <CardHeader>
-                <CardTitle>Lista de Líderes</CardTitle>
-                <CardDescription>
-                  Visualize todos os líderes atuais
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <UsersList filterRole="leader" />
-              </CardContent>
-            </Card>
-          </div>
+        <TabsContent value="leaders" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Gerenciar Líderes</CardTitle>
+                  <CardDescription>
+                    Adicione ou remova permissões de líderes
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <LeaderManagement />
+                
+                <div className="mt-8">
+                  <h3 className="text-lg font-medium mb-4">Líderes Atuais</h3>
+                  <UsersList filterRole="leader" />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
         
-        <TabsContent value="content">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle>Devocionais</CardTitle>
-                  <Button size="sm" onClick={() => navigate('/devotional/new')}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Novo
-                  </Button>
+        <TabsContent value="content" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>Gerenciar Conteúdo</CardTitle>
+                  <CardDescription>
+                    Administre o conteúdo do site (devocionais, playlists, etc.)
+                  </CardDescription>
                 </div>
-                <CardDescription>
-                  Gerencie os devocionais e planos de leitura
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Total de devocionais: 45
-                </p>
-              </CardContent>
-            </Card>
-            
-            <Card>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle>Playlists</CardTitle>
-                  <Button size="sm" onClick={() => navigate('/playlists')}>
-                    <PlusCircle className="mr-2 h-4 w-4" />
-                    Nova
-                  </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Devocionais</CardTitle>
+                      <CardDescription>Gerenciar conteúdo devocional</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <Button 
+                        variant="outline" 
+                        className="w-full justify-start" 
+                        onClick={() => {
+                          console.log("Navegando para /devotional/new");
+                          navigate('/devotional/new');
+                        }}
+                      >
+                        <PlusCircle className="mr-2 h-4 w-4" />
+                        Novo Devocional
+                      </Button>
+                    </CardContent>
+                  </Card>
+                  
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-lg">Playlists</CardTitle>
+                      <CardDescription>Gerenciar playlists de música</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-2">
+                      <Button onClick={() => navigate('/playlists')}>
+                        <Music className="mr-2 h-4 w-4" />
+                        Gerenciar Playlists
+                      </Button>
+                    </CardContent>
+                  </Card>
                 </div>
-                <CardDescription>
-                  Gerencie as playlists de música
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <p className="text-muted-foreground">
-                  Gerencie as playlists para cultos e eventos
-                </p>
-              </CardContent>
-            </Card>
-          </div>
+                
+                <div className="text-center py-4 text-muted-foreground">
+                  <p>Mais opções de gerenciamento de conteúdo serão adicionadas em breve.</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>

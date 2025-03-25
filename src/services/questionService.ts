@@ -189,7 +189,8 @@ export const getQuestions = async (filters?: {
       .from('questions')
       .select(`
         *,
-        author:users(username, email, display_name)
+        author:user_id(username, email, display_name),
+        responder:answered_by(username, email, display_name)
       `)
       .order('created_at', { ascending: false });
     
@@ -207,7 +208,45 @@ export const getQuestions = async (filters?: {
     
     const { data, error } = await query;
     
-    if (error) throw error;
+    if (error) {
+      // Se ocorrer um erro de ambiguidade nas relações, tente com nome de chave explícito
+      if (error.message?.includes('ambiguous') || error.message?.includes('multiple relationships')) {
+        console.log('Erro de ambiguidade detectado em getQuestions, tentando com relacionamento explícito...');
+        
+        let explicitQuery = supabase
+          .from('questions')
+          .select(`
+            *,
+            author:users!questions_user_id_fkey(username, email, display_name),
+            responder:users!questions_answered_by_fkey(username, email, display_name)
+          `)
+          .order('created_at', { ascending: false });
+        
+        if (filters?.status) {
+          explicitQuery = explicitQuery.eq('status', filters.status);
+        }
+        
+        if (filters?.userId) {
+          explicitQuery = explicitQuery.eq('user_id', filters.userId);
+        }
+        
+        if (filters?.limit) {
+          explicitQuery = explicitQuery.limit(filters.limit);
+        }
+        
+        const { data: explicitData, error: explicitError } = await explicitQuery;
+        
+        if (explicitError) {
+          console.error('Erro persistente ao buscar perguntas:', explicitError);
+          throw explicitError;
+        }
+        
+        return explicitData as QuestionDB[];
+      }
+      
+      throw error;
+    }
+    
     return data as QuestionDB[];
   } catch (error) {
     console.error('Erro ao buscar perguntas:', error);
@@ -244,12 +283,38 @@ export const getQuestionById = async (id: string): Promise<QuestionDB | null> =>
       .from('questions')
       .select(`
         *,
-        author:users(username, email, display_name)
+        author:user_id(username, email, display_name),
+        responder:answered_by(username, email, display_name)
       `)
       .eq('id', id)
       .single();
     
-    if (error) throw error;
+    if (error) {
+      // Se ocorrer um erro de ambiguidade nas relações, tente com nome de chave explícito
+      if (error.message?.includes('ambiguous') || error.message?.includes('multiple relationships')) {
+        console.log('Erro de ambiguidade detectado em getQuestionById, tentando com relacionamento explícito...');
+        
+        const { data: explicitData, error: explicitError } = await supabase
+          .from('questions')
+          .select(`
+            *,
+            author:users!questions_user_id_fkey(username, email, display_name),
+            responder:users!questions_answered_by_fkey(username, email, display_name)
+          `)
+          .eq('id', id)
+          .single();
+        
+        if (explicitError) {
+          console.error('Erro persistente ao buscar pergunta:', explicitError);
+          throw explicitError;
+        }
+        
+        return explicitData as QuestionDB;
+      }
+      
+      throw error;
+    }
+    
     return data as QuestionDB;
   } catch (error) {
     console.error('Erro ao buscar pergunta:', error);
@@ -294,7 +359,8 @@ export const answerQuestion = async (
         .eq('id', questionId)
         .select(`
           *,
-          author:users(username, email, display_name)
+          author:user_id(username, email, display_name),
+          responder:answered_by(username, email, display_name)
         `)
         .single();
       
@@ -351,7 +417,7 @@ export const answerQuestion = async (
                 .eq('id', questionId)
                 .select(`
                   *,
-                  author:users(username, email, display_name)
+                  author:users!questions_user_id_fkey(username, email, display_name)
                 `)
                 .single();
               
@@ -378,9 +444,79 @@ export const answerQuestion = async (
           // Se não for erro de chave estrangeira no RPC, repassa o erro
           throw rpcCallError;
         }
+      } else if (updateError.message?.includes('ambiguous') || 
+                updateError.message?.includes('multiple relationships')) {
+        // Tenta com uma abordagem mais explícita para resolver a ambiguidade
+        console.log('Erro de ambiguidade detectado, tentando com relacionamento explícito...');
+        
+        try {
+          const { data: explicitData, error: explicitError } = await supabase
+            .from('questions')
+            .update({
+              answer,
+              answered_by: user.id,
+              answered_at: now,
+              updated_at: now,
+              status: 'answered',
+              is_public: isPublic !== undefined ? isPublic : true
+            })
+            .eq('id', questionId)
+            .select(`
+              *,
+              author:users!questions_user_id_fkey(username, email, display_name),
+              responder:users!questions_answered_by_fkey(username, email, display_name)
+            `)
+            .single();
+          
+          if (explicitError) {
+            console.error('Erro com relacionamento explícito:', explicitError);
+            throw explicitError;
+          }
+          
+          console.log('Pergunta respondida com relacionamento explícito:', explicitData);
+          return explicitData as QuestionDB;
+        } catch (explicitError) {
+          console.error('Falha ao usar relacionamento explícito:', explicitError);
+          
+          // Como último recurso, tenta sem o answered_by
+          console.log('Tentando resposta sem answered_by e com relacionamento explícito...');
+          
+          try {
+            const { data: fallbackData, error: fallbackError } = await supabase
+              .from('questions')
+              .update({
+                answer,
+                answered_at: now,
+                updated_at: now,
+                status: 'answered',
+                is_public: isPublic !== undefined ? isPublic : true
+                // Sem answered_by
+              })
+              .eq('id', questionId)
+              .select(`
+                *,
+                author:users!questions_user_id_fkey(username, email, display_name)
+              `)
+              .single();
+            
+            if (fallbackError) {
+              console.error('Erro na última tentativa com relacionamento explícito:', fallbackError);
+              throw fallbackError;
+            }
+            
+            console.log('Pergunta respondida com último método de fallback:', fallbackData);
+            return fallbackData as QuestionDB;
+          } catch (finalError) {
+            console.error('Todas as abordagens falharam:', finalError);
+            throw new Error(
+              'Não foi possível responder à pergunta devido a problemas de relacionamento no banco de dados. ' +
+              'Tente novamente ou informe o administrador para verificar a estrutura das tabelas.'
+            );
+          }
+        }
       }
       
-      // Se não for erro de chave estrangeira, repassa o erro original
+      // Se não for erro de chave estrangeira ou ambiguidade, repassa o erro original
       throw updateError;
     }
   } catch (error: any) {

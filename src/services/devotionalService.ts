@@ -36,40 +36,31 @@ function generateUniqueId(): string {
 export interface Devotional {
   id: string;
   title: string;
-  content: string;
-  scripture: string;
-  scriptureText?: string;
-  author: string;
-  authorId?: string;
-  date: string;
-  dayOfWeek: string;
-  imageSrc?: string;
-  likes?: number;
-  hasLiked?: boolean;
-  comments?: DevotionalComment[];
-  commentsCount?: number;
-  isAIGenerated?: boolean;
-  references?: string[];
-  transmissionLink?: string;
+  content?: string;        // Conteúdo é opcional agora
+  scripture: string;       // O versículo é obrigatório
+  scriptureText?: string;  // Texto do versículo, pode ser preenchido pelo cliente
+  author: string;          // Nome do autor (admin)
+  authorId: string;        // ID do autor (admin)
+  date: string;            // Data de publicação
+  dayOfWeek?: string;      // Dia da semana opcional
+  imageSrc?: string;       // Caminho para imagem ilustrativa (opcional)
+  likes?: number;          // Contador de curtidas
+  hasLiked?: boolean;      // Se o usuário atual curtiu
+  comments?: DevotionalComment[]; // Comentários dos usuários
+  commentsCount?: number;  // Contador de comentários
+  theme?: string;          // Tema do devocional
+  references?: string[];   // Versículos adicionais para referência
+  transmissionLink?: string; // Link para transmissão, se houver
 }
 
 // Interface para comentários
 export interface DevotionalComment {
   id: string;
-  text: string;
+  text: string;            // O comentário do usuário é onde estará a interpretação pessoal
   author: string;
   authorId: string;
   authorAvatar?: string;
   createdAt: string;
-}
-
-// Interface para solicitação de devocional
-export interface DevotionalRequest {
-  theme: string;
-  customScripture?: string;
-  customTitle?: string;
-  targetDate?: Date;
-  authorId?: string;
 }
 
 // Dias da semana
@@ -103,8 +94,8 @@ export const getTodayDevotional = async (): Promise<Devotional | null> => {
       }
       
       if (!latestData) {
-        console.log('Nenhum devocional encontrado. Tentando gerar um automaticamente...');
-        return await checkAndPublishDailyDevotional();
+        console.log('Nenhum devocional encontrado.');
+        return null;
       }
       
       // A função agora retorna diretamente um objeto JSONB, não um array
@@ -112,8 +103,8 @@ export const getTodayDevotional = async (): Promise<Devotional | null> => {
     }
     
     if (!data) {
-      console.log('Nenhum devocional encontrado para hoje. Tentando gerar um automaticamente...');
-      return await checkAndPublishDailyDevotional();
+      console.log('Nenhum devocional encontrado para hoje.');
+      return null;
     }
     
     // A função agora retorna diretamente um objeto JSONB, não um array
@@ -258,7 +249,8 @@ async function enrichDevotionalData(devotionalData: any): Promise<Devotional> {
       hasLiked,
       commentsCount,
       references: devotionalData.references || [],
-      transmissionLink: devotionalData.transmission_link || ''
+      transmissionLink: devotionalData.transmission_link || '',
+      theme: devotionalData.theme || ''
     };
     
     // Buscar informações do autor se houver author_id
@@ -296,7 +288,8 @@ async function enrichDevotionalData(devotionalData: any): Promise<Devotional> {
       references: devotionalData.references || [],
       transmissionLink: devotionalData.transmission_link || '',
       likes: 0,
-      commentsCount: 0
+      commentsCount: 0,
+      theme: devotionalData.theme || ''
     };
   }
 }
@@ -477,6 +470,7 @@ export const toggleDevotionalLike = async (devotionalId: string): Promise<{ succ
 
 /**
  * Verifica e publica automaticamente o devocional diário se necessário
+ * Função removida - não haverá mais geração automática de devocionais
  */
 export const checkAndPublishDailyDevotional = async (): Promise<Devotional | null> => {
   try {
@@ -490,156 +484,189 @@ export const checkAndPublishDailyDevotional = async (): Promise<Devotional | nul
       .single();
     
     if (existingDevotional) {
-      console.log('Já existe um devocional para hoje:', existingDevotional.id);
+      console.log('Devocional encontrado para hoje:', existingDevotional.id);
       return await enrichDevotionalData(existingDevotional);
     }
     
-    // Não há devocional para hoje, vamos tentar gerar um automaticamente
-    const theme = "sabedoria"; // Tema padrão
-    console.log('Gerando devocional com tema:', theme);
-    
-    // Tentar gerar um novo devocional
-    const generatedDevotional = await generateDevotionalByTheme(theme);
-    
-    if (!generatedDevotional) {
-      console.log('Não foi possível gerar um devocional automático');
-      return null;
-    }
-    
-    return generatedDevotional;
+    // Não gerar automaticamente, apenas retornar null
+    console.log('Nenhum devocional encontrado para hoje e nenhum será gerado automaticamente.');
+    return null;
   } catch (error) {
-    console.error('Erro ao verificar/publicar devocional diário:', error);
+    console.error('Erro ao verificar devocional diário:', error);
     return null;
   }
 };
 
 /**
- * Gera um devocional baseado em um tema específico
+ * Função para criar um novo devocional, com formato simplificado
  */
-export const generateDevotionalByTheme = async (
-  request: DevotionalRequest | string
-): Promise<Devotional | null> => {
-  // Permitir passar apenas uma string como parâmetro (para backwards compatibility)
-  const themeRequest: DevotionalRequest = typeof request === 'string' 
-    ? { theme: request } 
-    : request;
-  
+export const createDevotional = async (devotional: Partial<Devotional>): Promise<string | null> => {
   try {
-    // Validar a entrada
-    if (!themeRequest.theme || themeRequest.theme.trim() === "") {
+    // Verificar autenticação tanto pelo Supabase quanto pelo localStorage
+    let authorId = null;
+    
+    // Primeiro, tenta obter da sessão do Supabase
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (sessionData?.session?.user?.id) {
+      authorId = sessionData.session.user.id;
+      console.log('ID do usuário obtido da sessão Supabase:', authorId);
+    } 
+    // Se não conseguiu, tenta obter do localStorage
+    else {
+      authorId = localStorage.getItem('current_user_id');
+      console.log('ID do usuário obtido do localStorage:', authorId);
+    }
+    
+    if (!authorId) {
+      console.error('Usuário não autenticado');
       toast({
-        title: "Tema obrigatório",
-        description: "Por favor, forneça um tema para gerar o devocional",
+        title: "Acesso negado",
+        description: "Você precisa estar autenticado para criar um devocional",
         variant: "destructive"
       });
       return null;
     }
-
-    // 1. Buscar versículos relacionados ao tema
-    let verses: BibleVerse[];
-    let mainScripture: BibleVerse;
     
-    if (themeRequest.customScripture) {
-      // Se um versículo específico foi fornecido, use-o
-      const verse = await getVerseByReference(themeRequest.customScripture);
-      if (!verse) {
-        toast({
-          title: "Versículo não encontrado",
-          description: `Não conseguimos encontrar o versículo "${themeRequest.customScripture}"`,
-          variant: "destructive"
-        });
-        return null;
+    // Verificar permissões (apenas administradores podem criar)
+    // Primeiro, tente buscar do localStorage
+    let isUserAuthorized = false;
+    const userStr = localStorage.getItem('current_user');
+    
+    if (userStr) {
+      try {
+        const userData = JSON.parse(userStr);
+        if (userData.role === 'admin' || userData.role === 'leader') {
+          console.log('Permissões verificadas via localStorage:', userData.role);
+          isUserAuthorized = true;
+        }
+      } catch (e) {
+        console.error('Erro ao ler usuário do localStorage:', e);
       }
-      mainScripture = verse;
-      verses = [mainScripture];
-    } else {
-      // Caso contrário, busque versículos relacionados ao tema
-      verses = await searchVersesByTheme(themeRequest.theme);
-      
-      if (verses.length === 0) {
-        toast({
-          title: "Nenhum versículo encontrado",
-          description: `Não encontramos versículos relacionados ao tema "${themeRequest.theme}"`,
-          variant: "destructive"
-        });
-        return null;
-      }
-      
-      // Seleciona um versículo principal aleatoriamente
-      mainScripture = verses[Math.floor(Math.random() * verses.length)];
     }
-
-    // 2. Obter explicação do versículo principal
-    const explanation = await getVerseExplanation(mainScripture.reference);
     
-    // 3. Criar o conteúdo do devocional
-    const title = themeRequest.customTitle || generateTitleFromTheme(themeRequest.theme, mainScripture.reference);
+    // Se não conseguiu verificar pelo localStorage, tenta o banco de dados
+    if (!isUserAuthorized) {
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('role')
+        .eq('id', authorId)
+        .single();
+        
+      if (userError) {
+        console.error('Erro ao verificar permissões:', userError);
+      } else if (userData && (userData.role === 'admin' || userData.role === 'leader')) {
+        console.log('Permissões verificadas via banco de dados:', userData.role);
+        isUserAuthorized = true;
+      }
+    }
     
-    // 4. Determinar a data de publicação
-    const targetDate = themeRequest.targetDate || new Date();
-    const formattedDate = format(targetDate, 'yyyy-MM-dd');
-    const dayOfWeek = DAYS_OF_WEEK[targetDate.getDay()];
+    if (!isUserAuthorized) {
+      console.error('Usuário não tem permissão para criar devocionais');
+      toast({
+        title: "Permissão negada",
+        description: "Apenas administradores podem criar devocionais",
+        variant: "destructive"
+      });
+      return null;
+    }
     
-    // 5. Gerar conteúdo devocional baseado no tema e no versículo
-    const content = generateDevotionalContent(themeRequest.theme, mainScripture, explanation);
+    // Validar campos obrigatórios
+    if (!devotional.title || !devotional.scripture) {
+      toast({
+        title: "Campos incompletos",
+        description: "Título e versículo são obrigatórios",
+        variant: "destructive"
+      });
+      return null;
+    }
     
-    // 6. Criar o objeto de devocional
-    const devotional: Devotional = {
-      id: generateUniqueId(),
-      title,
-      content,
-      scripture: mainScripture.reference,
-      scriptureText: mainScripture.text,
-      author: "Sistema Conexão Jovem",
-      authorId: themeRequest.authorId,
-      date: formattedDate,
-      dayOfWeek,
-      isAIGenerated: true,
-      references: verses.map(v => v.reference),
-      imageSrc: await getThemeImage(themeRequest.theme)
+    // Mapear os dados para o formato correto da tabela
+    const devotionalData = {
+      title: devotional.title,
+      content: devotional.content || '',  // Conteúdo é opcional
+      verse: devotional.scripture,
+      verse_text: devotional.scriptureText || '', // Texto do versículo
+      theme: devotional.theme || 'reflexão',
+      author_id: authorId,
+      author: 'Autor Manual',  // Valor padrão para garantir que o campo NOT NULL seja preenchido
+      date: devotional.date || new Date().toISOString().split('T')[0],
+      is_generated: false,  // Nunca será gerado automaticamente
+      "references": devotional.references || [],
+      image_url: devotional.imageSrc || '',
+      transmission_link: devotional.transmissionLink || '',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
     
-    // 7. Salvar no Supabase
-    const { error } = await supabase
-      .from('devotionals')
-      .insert([{
-        id: devotional.id,
-        title: devotional.title,
-        content: devotional.content,
-        scripture: devotional.scripture,
-        scripture_text: devotional.scriptureText,
-        author: devotional.author,
-        author_id: themeRequest.authorId,
-        date: devotional.date,
-        day_of_week: devotional.dayOfWeek,
-        is_ai_generated: devotional.isAIGenerated,
-        "references": devotional.references,
-        image_url: devotional.imageSrc,
-        transmission_link: devotional.transmissionLink
-      }]);
+    console.log("Criando devocional:", devotionalData);
+    
+    let devotionalId = null;
+    
+    // Usar diretamente o método RPC para evitar problemas com RLS
+    console.log('Criando devocional via RPC...');
+    
+    // Tratar problema de timeout ou resposta vazia
+    try {
+      const { data: rpcResult, error: rpcError } = await supabase.rpc('create_devotional', {
+        devotional_data: devotionalData
+      });
       
-    if (error) {
-      console.error("Erro ao salvar devocional:", error);
+      // Log adicional para depurar resultado completo da chamada RPC
+      console.log('Resposta completa da RPC:', { rpcResult, rpcError, status: rpcError ? 'erro' : rpcResult ? 'sucesso' : 'indefinido' });
+      
+      if (rpcError) {
+        console.error('Erro ao criar devocional via RPC:', rpcError);
+        toast({
+          title: "Erro ao salvar",
+          description: "Não foi possível salvar o devocional. Tente novamente mais tarde.",
+          variant: "destructive"
+        });
+        return null;
+      } 
+      
+      // Verificar se o resultado está vindo como null ou undefined
+      if (rpcResult === null || rpcResult === undefined) {
+        console.error('Função RPC retornou valor nulo ou indefinido. Verifique a implementação da função no banco de dados.');
+        
+        // Log mais detalhado para depuração
+        console.log('Detalhes da sessão:', await supabase.auth.getSession());
+        console.log('Detalhes do usuário:', await getCurrentUser());
+        
+        toast({
+          title: "Erro ao salvar",
+          description: "A função do banco de dados não retornou um ID válido. Contate o administrador.",
+          variant: "destructive"
+        });
+        return null;
+      }
+      
+      if (rpcResult) {
+        devotionalId = rpcResult;
+        console.log('Devocional criado com sucesso via RPC:', devotionalId);
+        
+        toast({
+          title: "Devocional criado",
+          description: "O devocional foi criado com sucesso",
+        });
+        
+        return devotionalId;
+      }
+    } catch (rpcCallError) {
+      console.error('Erro ao chamar a função RPC:', rpcCallError);
       toast({
-        title: "Erro ao salvar",
-        description: "Não foi possível salvar o devocional no banco de dados",
+        title: "Erro de comunicação",
+        description: "Problema ao comunicar com o banco de dados: " + rpcCallError.message,
         variant: "destructive"
       });
       return null;
     }
     
-    toast({
-      title: "Devocional criado",
-      description: `O devocional "${title}" foi criado com sucesso para ${format(targetDate, 'dd/MM/yyyy')}`,
-    });
-    
-    return devotional;
-    
+    return null;
   } catch (error) {
-    console.error("Erro ao gerar devocional:", error);
+    console.error('Erro ao criar devocional:', error);
     toast({
-      title: "Erro ao gerar devocional",
-      description: "Ocorreu um erro ao gerar o devocional. Tente novamente.",
+      title: "Erro inesperado",
+      description: "Ocorreu um erro ao criar o devocional. Tente novamente mais tarde.",
       variant: "destructive"
     });
     return null;
@@ -647,143 +674,151 @@ export const generateDevotionalByTheme = async (
 };
 
 /**
- * Gera um título criativo baseado no tema e no versículo
+ * Função para testar a RPC de criação de devocional
  */
-const generateTitleFromTheme = (theme: string, reference: string): string => {
-  const capitalizedTheme = capitalizeFirstLetter(theme);
-  
-  const titleTemplates = [
-    `${capitalizedTheme}: O Caminho para uma Vida Plena`,
-    `Descobrindo o Poder do ${capitalizedTheme} em ${reference}`,
-    `${capitalizedTheme}: Uma Perspectiva Bíblica`,
-    `Vivendo ${capitalizedTheme} no Dia a Dia`,
-    `A Importância do ${capitalizedTheme} na Vida Cristã`,
-    `${capitalizedTheme}: Princípios para o Crescimento Espiritual`,
-    `Transformados pelo ${capitalizedTheme}`,
-    `${reference} e a Verdade sobre ${capitalizedTheme}`,
-    `O Segredo do ${capitalizedTheme} Revelado em ${reference}`,
-    `${capitalizedTheme}: Da Teoria à Prática`
-  ];
-  
-  return titleTemplates[Math.floor(Math.random() * titleTemplates.length)];
-};
-
-/**
- * Capitaliza a primeira letra de uma string
- */
-const capitalizeFirstLetter = (string: string): string => {
-  return string.charAt(0).toUpperCase() + string.slice(1);
-};
-
-/**
- * Gera uma imagem relacionada ao tema
- */
-const getThemeImage = async (theme: string): Promise<string> => {
-  // Implementação básica - em produção, você poderia integrar com APIs como Unsplash, Pexels, etc.
-  const defaultImages = [
-    "/images/devotional/faith.jpg",
-    "/images/devotional/hope.jpg",
-    "/images/devotional/love.jpg",
-    "/images/devotional/prayer.jpg",
-    "/images/devotional/bible.jpg",
-  ];
-  
-  return defaultImages[Math.floor(Math.random() * defaultImages.length)];
-};
-
-/**
- * Gera conteúdo para o devocional baseado no tema e no versículo
- */
-const generateDevotionalContent = (
-  theme: string,
-  scripture: BibleVerse,
-  explanation?: VerseExplanation
-): string => {
-  const intro = `Hoje vamos refletir sobre ${theme}, um tema importante para nossa caminhada cristã. A Bíblia nos fala sobre isso em ${scripture.reference}.`;
-  
-  const scriptureQuote = `"${scripture.text}" (${scripture.reference}, ${bibleVersions[scripture.version]})`;
-  
-  let explanationText = "";
-  if (explanation) {
-    explanationText = `\n\nEste versículo nos ensina que: ${explanation.explanation}`;
-  }
-  
-  const application = `\n\nComo podemos aplicar isso em nossa vida hoje? ${theme} deve ser mais do que um conceito abstrato. Precisamos viver isso diariamente em nossas decisões e relacionamentos.`;
-  
-  const conclusion = `\n\nQue o Espírito Santo nos ajude a entender profundamente o significado de ${theme} e a aplicá-lo em nossa vida. Que sejamos transformados pela Palavra de Deus e que possamos ser luz para aqueles ao nosso redor.`;
-  
-  const prayer = `\n\nOração: Senhor Deus, obrigado pela Tua Palavra que nos orienta e transforma. Ajuda-nos a viver ${theme} em nossa vida diária. Que possamos ser testemunhas vivas do Teu amor e da Tua verdade. Em nome de Jesus, amém.`;
-  
-  return `${intro}\n\n${scriptureQuote}${explanationText}${application}${conclusion}${prayer}`;
-};
-
-// Função para criar um novo devocional, atualizando a chamada correta ao insert_devotional
-export const createDevotional = async (devotional: Partial<Devotional>): Promise<string | null> => {
+export const testCreateDevotionalRPC = async (): Promise<{success: boolean, message: string}> => {
   try {
-    // Obter o ID do usuário atual
-    const { data: sessionData } = await supabase.auth.getSession();
-    const authorId = sessionData?.session?.user?.id;
-    
-    if (!authorId) {
-      console.error('Usuário não autenticado');
-      return null;
+    // Tenta apenas verificar se a função existe
+    const { data, error } = await supabase
+      .rpc('rpc_test', {message: 'test'})
+      .maybeSingle();
+      
+    if (error) {
+      // Se der erro com essa função genérica, vamos testar outra abordagem
+      console.log('Erro ao testar função genérica, tentando verificar diretamente');
+      
+      // Tentar obter lista de funções disponíveis
+      const { data: funcData, error: funcError } = await supabase
+        .from('pg_proc')
+        .select('proname')
+        .eq('proname', 'create_devotional')
+        .maybeSingle();
+        
+      if (funcError) {
+        console.error('Não foi possível verificar se a função create_devotional existe:', funcError);
+        return {
+          success: false,
+          message: `Erro ao verificar função RPC: ${funcError.message}`
+        };
+      }
+      
+      return {
+        success: !!funcData,
+        message: funcData 
+          ? 'Função create_devotional está disponível no banco de dados'
+          : 'Função create_devotional NÃO foi encontrada no banco de dados'
+      };
     }
     
-    // Preparar os dados para inserção usando apenas as colunas existentes
-    const { data, error } = await supabase.rpc('insert_devotional', {
-      p_title: devotional.title || 'Devocional sem título',
-      p_content: devotional.content || '',
-      p_scripture: devotional.scripture || '',
-      p_scripture_text: devotional.scriptureText || '',
-      p_author_id: authorId,
-      p_date: devotional.date || new Date().toISOString().split('T')[0],
-      p_day_of_week: devotional.dayOfWeek || getCurrentDayOfWeek(),
-      p_image_url: devotional.imageSrc || '',
-      p_is_ai_generated: devotional.isAIGenerated || false
-    });
+    return {
+      success: true,
+      message: 'Teste de RPC bem-sucedido: as funções RPC estão acessíveis'
+    };
+  } catch (e) {
+    console.error('Erro ao testar RPC:', e);
+    return {
+      success: false,
+      message: `Erro ao testar RPC: ${e.message}`
+    };
+  }
+};
+
+/**
+ * Função para diagnosticar a estrutura da tabela devotionals
+ */
+export const diagnoseDevotionalsTable = async (): Promise<{success: boolean, message: string, structure?: any}> => {
+  try {
+    console.log('Executando diagnóstico da tabela devotionals...');
+    
+    const { data, error } = await supabase.rpc('diagnose_devotionals_table');
     
     if (error) {
-      console.error('Erro ao salvar devocional:', error);
-      return null;
+      console.error('Erro ao executar diagnóstico:', error);
+      return {
+        success: false,
+        message: `Erro ao diagnosticar tabela: ${error.message}`
+      };
     }
     
-    // A função deve retornar o UUID do novo devocional
-    return data;
-  } catch (error) {
-    console.error('Erro ao criar devocional:', error);
-    return null;
+    if (!data) {
+      return {
+        success: false,
+        message: 'Não foi possível obter informações da tabela'
+      };
+    }
+    
+    console.log('Estrutura da tabela devotionals:', data);
+    
+    // Verificar campos obrigatórios
+    const requiredFields = ['author', 'title', 'scripture', 'content'];
+    const missingFields = [];
+    
+    if (Array.isArray(data)) {
+      const columns = data.map(col => col.column_name);
+      requiredFields.forEach(field => {
+        if (!columns.includes(field)) {
+          missingFields.push(field);
+        }
+      });
+    }
+    
+    if (missingFields.length > 0) {
+      return {
+        success: false,
+        message: `Campos obrigatórios ausentes: ${missingFields.join(', ')}`,
+        structure: data
+      };
+    }
+    
+    return {
+      success: true,
+      message: 'Estrutura da tabela OK',
+      structure: data
+    };
+  } catch (e) {
+    console.error('Erro ao diagnosticar tabela:', e);
+    return {
+      success: false,
+      message: `Erro ao diagnosticar tabela: ${e.message}`
+    };
   }
 };
 
-// Atualizar a função para salvar devocionais gerados automaticamente 
-const saveGeneratedDevotional = async (devotional: Devotional): Promise<string | null> => {
+/**
+ * Função para testar inserção na tabela devotionals
+ */
+export const testInsertDevotional = async (): Promise<{success: boolean, message: string}> => {
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const authorId = sessionData?.session?.user?.id || '00000000-0000-0000-0000-000000000000'; // ID anônimo se não houver usuário
+    console.log('Executando teste de inserção na tabela devotionals...');
     
-    // Preparar os dados para inserção usando apenas as colunas existentes
-    const devotionalData = {
-      title: devotional.title,
-      content: devotional.content,
-      scripture: devotional.scripture,
-      scriptureText: devotional.scriptureText || '',
-      date: devotional.date || new Date().toISOString().split('T')[0],
-      dayOfWeek: devotional.dayOfWeek || getCurrentDayOfWeek(),
-      imageSrc: devotional.imageSrc || '',
-      isAIGenerated: true,
-      authorId
-    };
+    const { data, error } = await supabase.rpc('test_insert_devotional');
     
-    // Usar a versão atualizada da função para criar devotional
-    const id = await createDevotional(devotionalData);
-    
-    if (!id) {
-      throw new Error('Falha ao salvar o devocional gerado');
+    if (error) {
+      console.error('Erro ao executar teste de inserção:', error);
+      return {
+        success: false,
+        message: `Erro no teste de inserção: ${error.message}`
+      };
     }
     
-    return id;
-  } catch (error) {
-    console.error('Erro ao salvar devocional:', error);
-    return null;
+    console.log('Resultado do teste de inserção:', data);
+    
+    if (typeof data === 'string' && data.startsWith('Sucesso')) {
+      return {
+        success: true,
+        message: data
+      };
+    }
+    
+    return {
+      success: false,
+      message: data || 'Falha no teste de inserção (sem detalhes)'
+    };
+  } catch (e) {
+    console.error('Erro ao testar inserção:', e);
+    return {
+      success: false,
+      message: `Erro ao testar inserção: ${e.message}`
+    };
   }
 }; 

@@ -46,56 +46,54 @@ export const bibleVersions: Record<BibleVersion, string> = {
   KJV: "King James Atualizada"
 };
 
-// Mapeamento de versões da Bíblia para os códigos da API
-const apiVersionMapping: Record<BibleVersion, string> = {
-  NVI: "nvi",
-  ACF: "acf",
-  ARA: "ara",
-  NTLH: "ntlh",
-  NVT: "nvt",  // Note: If this version is not available in the API, it will fallback to NVI
-  KJV: "kjv"   // Note: If this version is not available in the API, it will fallback to NVI
+// Adicionar versículos específicos para o tema 'sabedoria'
+const themeToScriptures: Record<string, string[]> = {
+  "amor": ["1 Coríntios 13:4-7", "João 3:16", "1 João 4:7-8", "Romanos 5:8", "João 15:13", "1 Pedro 4:8", "Provérbios 10:12", "Provérbios 17:17"],
+  "fé": ["Hebreus 11:1", "Romanos 10:17", "Tiago 2:14-26", "Marcos 11:22-24", "Mateus 17:20", "Hebreus 11:6", "Efésios 2:8-9", "Romanos 1:17"],
+  "esperança": ["Romanos 15:13", "Hebreus 6:19", "Romanos 5:5", "Salmos 71:14", "Jeremias 29:11", "Romanos 8:24-25", "Lamentações 3:21-22", "1 Pedro 1:3"],
+  "salvação": ["Efésios 2:8-9", "Romanos 10:9-10", "João 3:36", "Atos 4:12", "João 14:6", "Romanos 1:16", "Tito 3:5", "Hebreus 9:28"],
+  "oração": ["Filipenses 4:6-7", "1 Tessalonicenses 5:17", "Tiago 5:16", "Mateus 6:9-13", "Mateus 7:7-8", "João 15:7", "Salmos 145:18", "Colossenses 4:2"],
+  "graça": ["Efésios 2:8-9", "2 Coríntios 12:9", "Romanos 11:6", "João 1:14", "Romanos 3:24", "Tito 2:11", "Hebreus 4:16", "2 Pedro 3:18"],
+  "paz": ["João 14:27", "Filipenses 4:7", "Colossenses 3:15", "Romanos 5:1", "Isaías 26:3", "Salmos 29:11", "2 Tessalonicenses 3:16", "Gálatas 5:22"],
+  "perdão": ["Mateus 6:14-15", "Colossenses 3:13", "Efésios 4:32", "1 João 1:9", "Marcos 11:25", "Salmos 103:12", "Provérbios 17:9", "Isaías 43:25"],
+  "sabedoria": [
+    "Provérbios 1:7", 
+    "Tiago 1:5", 
+    "Provérbios 3:13-18", 
+    "Colossenses 2:2-3", 
+    "Provérbios 9:10", 
+    "Eclesiastes 7:12", 
+    "Provérbios 4:7", 
+    "Salmos 111:10", 
+    "Provérbios 2:6", 
+    "Tiago 3:17", 
+    "Provérbios 16:16", 
+    "Provérbios 15:33", 
+    "Provérbios 19:20",
+    "Provérbios 8:11",
+    "Jó 28:28",
+    "Provérbios 24:14",
+    "Provérbios 8:22-31",
+    "Provérbios 7:4",
+    "Efésios 5:15-17",
+    "Provérbios 13:10",
+    "Provérbios 14:8",
+    "Eclesiastes 9:18"
+  ],
+  "alegria": ["Salmos 16:11", "João 15:11", "Romanos 15:13", "Salmos 30:5", "Filipenses 4:4", "Isaías 55:12", "1 Tessalonicenses 5:16", "Gálatas 5:22"],
+  "fortaleza": ["Filipenses 4:13", "Isaías 40:31", "Efésios 6:10", "2 Coríntios 12:10", "Josué 1:9", "Salmos 18:32", "Salmos 27:1", "Provérbios 18:10"]
+  // Adicione mais temas conforme necessário
 };
 
-// Versão de fallback para quando a selecionada não estiver disponível
-const FALLBACK_VERSION = "nvi";
-
-// Adicione este mapeamento de temas para versículos
-const themeToScriptures: Record<string, string[]> = {
-  "amor": [
-    "João 3:16",
-    "1 Coríntios 13:4-7",
-    "1 João 4:19",
-    "Romanos 5:8",
-    "1 João 4:7-8"
-  ],
-  "fé": [
-    "Hebreus 11:1",
-    "Marcos 11:22-24",
-    "2 Coríntios 5:7",
-    "Tiago 2:14-17",
-    "Romanos 10:17"
-  ],
-  "esperança": [
-    "Romanos 15:13",
-    "Jeremias 29:11",
-    "Hebreus 6:19",
-    "Salmos 71:14",
-    "1 Pedro 1:3"
-  ],
-  "perdão": [
-    "Colossenses 3:13",
-    "Mateus 6:14-15",
-    "Efésios 4:32",
-    "1 João 1:9",
-    "Lucas 23:34"
-  ],
-  "gratidão": [
-    "1 Tessalonicenses 5:18",
-    "Salmos 107:1",
-    "Colossenses 3:15-17",
-    "Filipenses 4:6-7",
-    "Salmos 100:4"
-  ]
+// Mapeamento de versões para a API
+const FALLBACK_VERSION = "acf";
+const apiVersionMapping: Record<BibleVersion, string> = {
+  "NVI": "nvi",
+  "ACF": "acf",
+  "ARA": "ara",
+  "NTLH": "ntlh",
+  "NVT": "nvt",
+  "KJV": "kjv"
 };
 
 // Substitua a linha que usa process.env por uma variável de ambiente do Vite
@@ -315,29 +313,36 @@ export const searchVersesByTheme = async (
     }
 
     // Se não houver versículos pré-definidos, faz uma busca na API
-    const response = await axios.get(
-      `https://www.abibliadigital.com.br/api/verses/search`,
-      {
-        headers: { Authorization: `Bearer ${BIBLE_API_KEY}` },
-        params: { 
-          version: apiVersionMapping[version] || FALLBACK_VERSION,
-          search: theme,
-          limit
+    try {
+      const response = await axios.get(
+        `https://www.abibliadigital.com.br/api/verses/search`,
+        {
+          headers: { Authorization: `Bearer ${BIBLE_API_KEY}` },
+          params: { 
+            version: apiVersionMapping[version] || FALLBACK_VERSION,
+            search: theme,
+            limit
+          }
         }
-      }
-    );
+      );
 
-    if (response.data && response.data.verses) {
-      return response.data.verses.map((v: any) => ({
-        reference: `${v.book.name} ${v.chapter}:${v.number}`,
-        text: v.text,
-        version,
-        bookId: v.book.abbrev,
-        chapter: v.chapter,
-        verse: v.number
-      }));
+      if (response.data && response.data.verses) {
+        return response.data.verses.map((v: any) => ({
+          reference: `${v.book.name} ${v.chapter}:${v.number}`,
+          text: v.text,
+          version,
+          bookId: v.book.abbrev,
+          chapter: v.chapter,
+          verse: v.number
+        }));
+      }
+    } catch (apiError) {
+      console.error("Erro ao buscar versículos por tema:", apiError);
+      // Continua para o fallback
     }
 
+    // Fallback: se a API falhar ou não retornar resultados, usa versículos estáticos
+    console.log("Usando versículos de fallback para o tema:", theme);
     return getFallbackVerses(theme, version);
   } catch (error) {
     console.error("Erro ao buscar versículos por tema:", error);
@@ -410,17 +415,86 @@ export const getVerseInMultipleVersions = async (
 
 // Função para obter texto de fallback
 const getFallbackScriptureText = (reference: string, version: BibleVersion): string | null => {
-  // Implementar lógica de fallback se necessário
-  return `[${version}] ${reference} - Texto não disponível no momento.`;
+  try {
+    // Textos pré-definidos para versículos comuns
+    const predefinedTexts: Record<string, Record<BibleVersion, string>> = {
+      "João 3:16": {
+        "NVI": "Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.",
+        "ACF": "Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna.",
+        "ARA": "Porque Deus amou ao mundo de tal maneira que deu o seu Filho unigênito, para que todo o que nele crê não pereça, mas tenha a vida eterna.",
+        "NTLH": "Porque Deus amou o mundo de tal maneira que deu o seu Filho único, para que todo aquele que nele crê não morra, mas tenha a vida eterna.",
+        "NVT": "Porque Deus amou tanto o mundo que deu seu Filho único, para que todo o que nele crer não pereça, mas tenha a vida eterna.",
+        "KJV": "Porque Deus amou o mundo de tal maneira que deu o seu Filho unigênito, para que todo aquele que nele crê não pereça, mas tenha a vida eterna."
+      },
+      "Provérbios 1:7": {
+        "NVI": "O temor do Senhor é o princípio do conhecimento, mas os insensatos desprezam a sabedoria e a disciplina.",
+        "ACF": "O temor do Senhor é o princípio da ciência; os loucos desprezam a sabedoria e a instrução.",
+        "ARA": "O temor do Senhor é o princípio do saber, mas os loucos desprezam a sabedoria e o ensino.",
+        "NTLH": "O temor do Senhor é o princípio do conhecimento; os tolos desprezam a sabedoria e o ensino.",
+        "NVT": "O temor do Senhor é o princípio do conhecimento, mas os insensatos desprezam a sabedoria e o ensino.",
+        "KJV": "O temor do Senhor é o princípio do conhecimento; os insensatos desprezam a sabedoria e a instrução."
+      },
+      "Tiago 1:5": {
+        "NVI": "Se algum de vocês tem falta de sabedoria, peça-a a Deus, que a todos dá livremente, de boa vontade; e lhe será concedida.",
+        "ACF": "E, se algum de vós tem falta de sabedoria, peça-a a Deus, que a todos dá liberalmente, e o não lança em rosto, e ser-lhe-á dada.",
+        "ARA": "Se, porém, algum de vós necessita de sabedoria, peça-a a Deus, que a todos dá liberalmente e nada lhes impropera; e ser-lhe-á concedida.",
+        "NTLH": "Se algum de vocês tem falta de sabedoria, peça a Deus, que a todos dá livremente, de boa vontade; e lhe será concedida.",
+        "NVT": "Se algum de vocês precisa de sabedoria, peça a Deus, que de boa vontade dá a todos generosamente, sem criticar.",
+        "KJV": "Se algum de vós tem falta de sabedoria, peça-a a Deus, que a todos dá liberalmente, sem censura, e ser-lhe-á dada."
+      },
+      "Provérbios 9:10": {
+        "NVI": "O temor do Senhor é o princípio da sabedoria, e o conhecimento do Santo é entendimento.",
+        "ACF": "O temor do Senhor é o princípio da sabedoria, e a ciência do Santo a prudência.",
+        "ARA": "O temor do Senhor é o princípio da sabedoria, e o conhecimento do Santo é prudência.",
+        "NTLH": "O temor do Senhor é o princípio da sabedoria, e o conhecimento do Santo é entendimento.",
+        "NVT": "O temor do Senhor é o princípio da sabedoria, e o conhecimento do Santo é entendimento.",
+        "KJV": "O temor do Senhor é o princípio da sabedoria, e o conhecimento do Santo é o entendimento."
+      }
+    };
+    
+    // Verificar se temos o texto pré-definido para esta referência e versão
+    const baseRef = reference.split('-')[0].trim(); // Pegar apenas a primeira parte da referência se for um range
+    if (predefinedTexts[baseRef] && predefinedTexts[baseRef][version]) {
+      return predefinedTexts[baseRef][version];
+    }
+    
+    // Caso não tenhamos o texto pré-definido, mostrar uma mensagem genérica
+    return `[${version}] ${reference} - Texto não disponível no momento. O app está funcionando offline.`;
+  } catch (error) {
+    console.error("Erro ao obter texto de fallback:", error);
+    return `${reference} - Texto indisponível.`;
+  }
 };
 
 // Função para obter versículo de fallback
 const getFallbackVerse = (reference: string, version: BibleVersion): BibleVerse => {
-  return {
-    reference,
-    text: getFallbackScriptureText(reference, version) || '',
-    version
-  };
+  try {
+    // Extrair informações da referência para completar o objeto
+    const parsed = parseScriptureReference(reference);
+    let bookId, chapter, verse;
+    
+    if (parsed) {
+      bookId = getBookCode(parsed.book);
+      chapter = parsed.chapter;
+      verse = typeof parsed.verses === 'number' ? parsed.verses : parseInt(parsed.verses.toString().split('-')[0]);
+    }
+    
+    return {
+      reference,
+      text: getFallbackScriptureText(reference, version) || '',
+      version,
+      bookId,
+      chapter,
+      verse
+    };
+  } catch (error) {
+    console.error("Erro ao criar versículo de fallback:", error);
+    return {
+      reference,
+      text: `${reference} - Texto indisponível.`,
+      version
+    };
+  }
 };
 
 // Função para obter versículos de fallback por tema

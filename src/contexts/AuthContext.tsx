@@ -10,6 +10,7 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>
   signOut: () => Promise<void>
   updateUser: (updates: Partial<User>) => Promise<void>
+  fetchProfile: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -89,6 +90,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser({ ...user, ...updates })
   }
 
+  const fetchProfile = async () => {
+    if (!supabaseUser) return;
+    
+    try {
+      await fetchUser(supabaseUser.id);
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+    }
+  }
+
   const value = {
     user,
     supabaseUser,
@@ -96,6 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signIn,
     signOut,
     updateUser,
+    fetchProfile,
   }
 
   return (

@@ -31,6 +31,11 @@ export interface QuestionDB {
     email: string;
     display_name?: string;
   };
+  responder?: {
+    username: string;
+    email: string;
+    display_name?: string;
+  };
   // Adicionar outros campos possíveis que possam existir no banco
   is_public?: boolean;
 }
@@ -45,7 +50,7 @@ export const convertDBQuestionToUI = (dbQuestion: QuestionDB): Question => {
     username: dbQuestion.author?.username || 'Usuário',
     answer: dbQuestion.answer,
     answeredBy: dbQuestion.answered_by,
-    answeredByName: dbQuestion.author?.display_name || dbQuestion.author?.username || 'Líder',
+    answeredByName: dbQuestion.responder?.display_name || dbQuestion.responder?.username || 'Líder',
     createdAt: dbQuestion.created_at,
     answered: dbQuestion.status === 'answered',
     isPublic: dbQuestion.is_public !== undefined ? dbQuestion.is_public : true // Por padrão, todas as perguntas são públicas no novo sistema

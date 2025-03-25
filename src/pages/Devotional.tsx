@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import DevotionalCard, { DevotionalProps } from "@/components/DevotionalCard";
-import { isAdmin } from "@/utils/auth";
+import { isAdmin, isAuthenticated } from "@/services/authService";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -11,7 +11,6 @@ import { toast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { format, addDays, subDays, isToday } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { isAuthenticated } from "@/utils/auth";
 import { useNavigate } from "react-router-dom";
 import { 
   getTodayDevotional,
@@ -57,12 +56,22 @@ const Devotional = () => {
   const [activeTab, setActiveTab] = useState("today");
   const [likeCount, setLikeCount] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
-  const adminUser = isAdmin();
+  const [isAdminUser, setIsAdminUser] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
     document.title = "Conexão Jovem | Devocional Diário";
-    setIsLoggedIn(isAuthenticated());
+    
+    const checkAuth = async () => {
+      const authStatus = await isAuthenticated();
+      setIsLoggedIn(authStatus);
+      
+      // Verificar se é admin
+      const adminStatus = await isAdmin();
+      setIsAdminUser(adminStatus);
+    };
+    
+    checkAuth();
     loadDevotional();
   }, []);
 
@@ -178,22 +187,15 @@ const Devotional = () => {
               </p>
             </div>
             
-            {adminUser && (
-              <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogTrigger asChild>
-                  <Button variant="outline" className="flex items-center gap-2">
-                    <Plus size={16} />
-                    Adicionar
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-[600px]">
-                  <DialogHeader>
-                    <DialogTitle>Adicionar Devocional</DialogTitle>
-                  </DialogHeader>
-                  
-                  {/* Conteúdo do diálogo existente... */}
-                </DialogContent>
-              </Dialog>
+            {isAdminUser && (
+              <Button
+                variant="outline"
+                className="flex items-center gap-2"
+                onClick={() => navigate('/devotional/new')}
+              >
+                <Plus size={16} />
+                Adicionar
+              </Button>
             )}
           </div>
           
@@ -378,8 +380,8 @@ const Devotional = () => {
               <p className="text-muted-foreground mb-4">
                 Não há devocionais disponíveis para {getCurrentDayOfWeek()}
               </p>
-              {adminUser && (
-                <Button onClick={() => setIsOpen(true)}>
+              {isAdminUser && (
+                <Button onClick={() => navigate('/devotional/new')}>
                   Adicionar devocional para hoje
                 </Button>
               )}

@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/supabase";
 import { 
   Dialog, 
   DialogContent, 
@@ -23,7 +24,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { BadgeCheck, Edit, Trash, UserPlus, ShieldAlert } from "lucide-react";
+import { BadgeCheck, Edit, Trash, UserPlus, ShieldAlert, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface UsersListProps {
@@ -38,6 +39,7 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
   const [currentUserIsLeader, setCurrentUserIsLeader] = useState(false);
   const [isNewUserDialogOpen, setIsNewUserDialogOpen] = useState(false);
   const [isEditUserDialogOpen, setIsEditUserDialogOpen] = useState(false);
+  const [creatingUser, setCreatingUser] = useState(false);
   const [newUser, setNewUser] = useState({
     username: "",
     email: "",
@@ -104,7 +106,8 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
     }
   };
 
-  const handleCreateUser = () => {
+  const handleCreateUser = async () => {
+    // Validar campos
     if (!newUser.username || !newUser.email || !newUser.password) {
       toast({
         title: "Campos obrigatórios",
@@ -114,21 +117,188 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
       return;
     }
 
-    // In a real implementation, we would call an API to create the user
-    // For now, just close the dialog and show a success message
-    toast({
-      title: "Não implementado",
-      description: "A criação de usuários via interface não está implementada. Use o painel de administração do Supabase.",
-      variant: "destructive"
-    });
-    
-    setIsNewUserDialogOpen(false);
-    setNewUser({
-      username: "",
-      email: "",
-      password: "",
-      isAdmin: false
-    });
+    // Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(newUser.email)) {
+      toast({
+        title: "Email inválido",
+        description: "Por favor, insira um endereço de email válido",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validar comprimento da senha
+    if (newUser.password.length < 6) {
+      toast({
+        title: "Senha muito curta",
+        description: "A senha deve ter pelo menos 6 caracteres",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      setCreatingUser(true);
+      
+      // Verificar permissões
+      if (newUser.isAdmin && !currentUserIsAdmin) {
+        toast({
+          title: "Permissão negada",
+          description: "Apenas administradores podem criar outros administradores",
+          variant: "destructive"
+        });
+        setCreatingUser(false);
+        return;
+      }
+      
+      // Gerar UUID para o usuário (pode ser substituído pelo ID gerado pelo Supabase)
+      const tempUserId = crypto.randomUUID();
+      let userId = tempUserId;
+      let authUserCreated = false;
+      
+      // 1. Tentar criar usuário no Auth do Supabase
+      try {
+        const { data, error } = await supabase.auth.signUp({
+          email: newUser.email,
+          password: newUser.password,
+          options: {
+            data: {
+              username: newUser.username,
+              first_name: newUser.username
+            }
+          }
+        });
+        
+        if (error) {
+          console.error("Erro ao criar usuário no Auth:", error);
+          
+          // Tratamento específico para email já existente
+          if (error.message.includes("already registered")) {
+            toast({
+              title: "Email já cadastrado",
+              description: "Este endereço de email já está em uso. Por favor, escolha outro.",
+              variant: "destructive"
+            });
+            return;
+          }
+          
+          // Se for erro de autorização, tentamos método alternativo
+          if (error.message.includes("not authorized") || error.message.includes("permission")) {
+            console.log("Erro de autorização, tentando método alternativo...");
+          } else {
+            throw error; // Propagar outros erros
+          }
+        } else if (data.user) {
+          // Se sucesso, usar o ID gerado
+          userId = data.user.id;
+          authUserCreated = true;
+          console.log("Usuário criado no Auth com sucesso, ID:", userId);
+        }
+      } catch (authError) {
+        console.warn("Erro no Auth, tentando método alternativo...", authError);
+      }
+      
+      // 2. Se falhou no Auth ou houve erro de permissão, tentar método RPC
+      if (!authUserCreated) {
+        try {
+          console.log("Tentando criar usuário via função RPC...");
+          const { data: rpcData, error: rpcError } = await supabase.rpc(
+            'create_full_user',
+            {
+              p_email: newUser.email,
+              p_password: newUser.password,
+              p_first_name: newUser.username,
+              p_phone_number: ""
+            }
+          );
+          
+          if (rpcError) {
+            console.error("Erro ao criar usuário via RPC:", rpcError);
+          } else if (rpcData && rpcData.user_id) {
+            userId = rpcData.user_id;
+            authUserCreated = true;
+            console.log("Usuário criado via RPC com sucesso, ID:", userId);
+          }
+        } catch (rpcError) {
+          console.warn("Erro na função RPC, tentando métodos alternativos...", rpcError);
+        }
+      }
+      
+      // 3. Criar perfil do usuário na tabela users (se o Auth foi bem-sucedido)
+      if (authUserCreated) {
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: userId,
+            email: newUser.email,
+            username: newUser.username,
+            first_name: newUser.username,
+            role: newUser.isAdmin ? 'admin' : 'user',
+            created_at: new Date().toISOString()
+          });
+        
+        if (profileError) {
+          console.error("Erro ao criar perfil:", profileError);
+          
+          // Tratamento específico para violação de chave única
+          if (profileError.message?.includes("duplicate key") || profileError.code === '23505') {
+            toast({
+              title: "Erro de duplicação",
+              description: "Já existe um usuário com este email no sistema",
+              variant: "destructive"
+            });
+          } else if (profileError.message?.includes("permission") || profileError.message?.includes("not authorized")) {
+            toast({
+              title: "Permissão insuficiente",
+              description: "Você não tem permissão para criar usuários. Entre em contato com o administrador do sistema.",
+              variant: "destructive"
+            });
+          } else {
+            toast({
+              title: "Aviso",
+              description: "Usuário criado no sistema de autenticação, mas houve um problema ao configurar o perfil completo.",
+              variant: "default"
+            });
+          }
+        } else {
+          // Sucesso - usuário e perfil criados
+          toast({
+            title: "Usuário criado",
+            description: `O usuário ${newUser.username} foi criado com sucesso ${newUser.isAdmin ? 'como administrador' : 'como usuário comum'}`,
+          });
+          
+          // Atualizar a lista de usuários
+          const updatedUsers = await getAllUsers();
+          setUsers(updatedUsers);
+          
+          // Resetar o formulário e fechar o diálogo
+          setIsNewUserDialogOpen(false);
+          setNewUser({
+            username: "",
+            email: "",
+            password: "",
+            isAdmin: false
+          });
+        }
+      } else {
+        // Falha completa na criação do usuário
+        toast({
+          title: "Erro ao criar usuário",
+          description: "Não foi possível criar o usuário. Verifique as permissões ou tente novamente mais tarde.",
+          variant: "destructive"
+        });
+      }
+    } catch (error: any) {
+      console.error("Erro ao criar usuário:", error);
+      toast({
+        title: "Erro ao criar usuário",
+        description: error.message || "Ocorreu um erro ao criar o usuário",
+        variant: "destructive"
+      });
+    } finally {
+      setCreatingUser(false);
+    }
   };
 
   if (loading) {
@@ -256,11 +426,16 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
             </div>
             
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsNewUserDialogOpen(false)}>
+              <Button variant="outline" onClick={() => setIsNewUserDialogOpen(false)} disabled={creatingUser}>
                 Cancelar
               </Button>
-              <Button onClick={handleCreateUser}>
-                Criar Usuário
+              <Button onClick={handleCreateUser} disabled={creatingUser}>
+                {creatingUser ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Criando...
+                  </>
+                ) : "Criar Usuário"}
               </Button>
             </DialogFooter>
           </DialogContent>

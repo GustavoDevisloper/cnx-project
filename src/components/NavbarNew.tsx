@@ -14,12 +14,14 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { User as UserType } from '@/services/authService';
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 
 const NavbarNew = () => {
   const [scrolled, setScrolled] = useState(false);
   const [authenticated, setAuthenticated] = useState(false);
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [avatarKey, setAvatarKey] = useState(Date.now()); // Para forçar atualização da imagem
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -77,6 +79,17 @@ const NavbarNew = () => {
     }
   };
   
+  // Função auxiliar para gerar iniciais do nome para o avatar
+  const getInitials = (name: string) => {
+    if (!name) return "U";
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
+  };
+  
   // Verificar autenticação ao montar o componente
   useEffect(() => {
     if (!isAuthPage) {
@@ -116,6 +129,50 @@ const NavbarNew = () => {
       }
     };
     
+    // Listener para evento de mudança de nome de usuário
+    const handleNameChange = (event: CustomEvent) => {
+      console.log("👤 Evento user-name-changed detectado no navbar", event.detail);
+      
+      // Verificar se temos um usuário logado e se o ID bate
+      if (currentUser && currentUser.id === event.detail.userId) {
+        // Atualizar o nome do usuário sem ter que recarregar tudo
+        setCurrentUser(prev => {
+          if (!prev) return null;
+          
+          return {
+            ...prev,
+            display_name: event.detail.displayName || prev.display_name,
+            username: event.detail.username || prev.username
+          };
+        });
+        
+        console.log("✅ Nome de usuário atualizado na navbar");
+      }
+    };
+    
+    // Listener para evento de mudança de avatar
+    const handleAvatarChange = (event: CustomEvent) => {
+      console.log("🖼️ Evento user-avatar-changed detectado no navbar", event.detail);
+      
+      // Verificar se temos um usuário logado e se o ID bate
+      if (currentUser && currentUser.id === event.detail.userId) {
+        // Atualizar o avatar do usuário sem ter que recarregar tudo
+        setCurrentUser(prev => {
+          if (!prev) return null;
+          
+          return {
+            ...prev,
+            avatar_url: event.detail.avatarUrl
+          };
+        });
+        
+        // Forçar recarregamento da imagem
+        setAvatarKey(Date.now());
+        
+        console.log("✅ Avatar do usuário atualizado na navbar");
+      }
+    };
+    
     // Listener para evento de início de logout
     const handleLogoutStarted = () => {
       console.log("🚪 Logout iniciado, bloqueando verificações de autenticação");
@@ -132,14 +189,18 @@ const NavbarNew = () => {
     window.addEventListener("focus", handleFocus);
     window.addEventListener("auth-state-changed", handleAuthChange);
     window.addEventListener("auth-logout-started", handleLogoutStarted);
+    window.addEventListener("user-name-changed", handleNameChange as EventListener);
+    window.addEventListener("user-avatar-changed", handleAvatarChange as EventListener);
     
     return () => {
       window.removeEventListener("scroll", handleScroll);
       window.removeEventListener("focus", handleFocus);
       window.removeEventListener("auth-state-changed", handleAuthChange);
       window.removeEventListener("auth-logout-started", handleLogoutStarted);
+      window.removeEventListener("user-name-changed", handleNameChange as EventListener);
+      window.removeEventListener("user-avatar-changed", handleAvatarChange as EventListener);
     };
-  }, [isAuthPage]);
+  }, [isAuthPage, currentUser]);
 
   const handleLogin = () => {
     navigate('/login');
@@ -171,6 +232,13 @@ const NavbarNew = () => {
 
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
+  };
+
+  // Função para garantir que a URL da imagem tenha sempre um parâmetro de atualização
+  const getAvatarUrl = (url: string | undefined) => {
+    if (!url) return '';
+    const baseUrl = url.split('?')[0];
+    return `${baseUrl}?v=${avatarKey}`;
   };
 
   return (
@@ -246,15 +314,43 @@ const NavbarNew = () => {
                   <Button
                     variant="outline"
                     size="sm"
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 pl-2 pr-3"
                   >
-                    <UserCircle className="h-4 w-4" />
-                    <span>{currentUser?.username || 'Usuário'}</span>
+                    <Avatar className="h-6 w-6 border border-primary/20">
+                      {currentUser?.avatar_url ? (
+                        <AvatarImage
+                          src={getAvatarUrl(currentUser.avatar_url)}
+                          alt={currentUser.display_name || 'User'}
+                        />
+                      ) : (
+                        <AvatarFallback className="text-xs">
+                          {getInitials(currentUser?.display_name || currentUser?.username || currentUser?.email || 'U')}
+                        </AvatarFallback>
+                      )}
+                    </Avatar>
+                    <span>{currentUser?.display_name || currentUser?.username || 'Usuário'}</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
-                  <DropdownMenuLabel>
-                    {currentUser?.email}
+                  <DropdownMenuLabel className="flex flex-col">
+                    <div className="flex items-center gap-3 pb-1.5">
+                      <Avatar className="h-10 w-10 border border-primary/20">
+                        {currentUser?.avatar_url ? (
+                          <AvatarImage
+                            src={getAvatarUrl(currentUser.avatar_url)}
+                            alt={currentUser.display_name || 'User'}
+                          />
+                        ) : (
+                          <AvatarFallback>
+                            {getInitials(currentUser?.display_name || currentUser?.username || currentUser?.email || 'U')}
+                          </AvatarFallback>
+                        )}
+                      </Avatar>
+                      <div>
+                        <span className="font-semibold">{currentUser?.display_name || 'Usuário'}</span>
+                        <span className="text-xs text-muted-foreground block">{currentUser?.email}</span>
+                      </div>
+                    </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={goToProfile}>
@@ -307,6 +403,31 @@ const NavbarNew = () => {
         style={{ top: '72px' }} // Altura do cabeçalho
       >
         <div className="flex flex-col space-y-1 p-6">
+          {authenticated && (
+            <div className="flex items-center space-x-3 p-4 mb-2 bg-muted/30 rounded-lg">
+              <Avatar className="h-10 w-10 border border-primary/20">
+                {currentUser?.avatar_url ? (
+                  <AvatarImage
+                    src={getAvatarUrl(currentUser.avatar_url)}
+                    alt={currentUser.display_name || 'User'}
+                  />
+                ) : (
+                  <AvatarFallback>
+                    {getInitials(currentUser?.display_name || currentUser?.username || currentUser?.email || 'U')}
+                  </AvatarFallback>
+                )}
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <div className="font-medium truncate">
+                  {currentUser?.display_name || currentUser?.username || 'Usuário'}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {currentUser?.email}
+                </div>
+              </div>
+            </div>
+          )}
+          
           <NavLink 
             to="/"
             className={({isActive}) => cn(

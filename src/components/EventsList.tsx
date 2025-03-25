@@ -7,6 +7,7 @@ import { ptBR } from 'date-fns/locale';
 import { 
   getUpcomingEvents, 
   updateEvent,
+  deleteEvent,
   Event 
 } from '@/services/eventService';
 import { toast } from '@/hooks/use-toast';
@@ -78,21 +79,22 @@ export default function EventsList() {
   const handleDelete = async (eventId: string) => {
     try {
       setDeleteLoading(eventId);
-      // Marcar o evento como cancelado, em vez de excluí-lo
-      await updateEvent(eventId, { status: 'cancelled' });
       
-      // Atualizar a lista de eventos (remover o item cancelado)
+      // Excluir o evento do banco de dados
+      await deleteEvent(eventId);
+      
+      // Atualizar a lista de eventos removendo o evento excluído
       setEvents(events.filter(event => event.id !== eventId));
       
       toast({
-        title: 'Evento cancelado',
-        description: 'O evento foi cancelado com sucesso',
+        title: 'Evento excluído',
+        description: 'O evento foi excluído com sucesso',
       });
     } catch (error: any) {
-      console.error('Erro ao cancelar evento:', error);
+      console.error('Erro ao excluir evento:', error);
       toast({
-        title: 'Erro ao cancelar evento',
-        description: error.message || 'Não foi possível cancelar o evento',
+        title: 'Erro ao excluir evento',
+        description: error.message || 'Não foi possível excluir o evento',
         variant: 'destructive'
       });
     } finally {
@@ -164,9 +166,9 @@ export default function EventsList() {
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Cancelar evento</AlertDialogTitle>
+                  <AlertDialogTitle>Excluir evento</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Tem certeza que deseja cancelar este evento? Esta ação não pode ser desfeita.
+                    Tem certeza que deseja excluir este evento? Esta ação não pode ser desfeita e o evento será completamente removido do sistema.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -174,8 +176,9 @@ export default function EventsList() {
                   <AlertDialogAction
                     onClick={() => handleDelete(event.id)}
                     disabled={deleteLoading === event.id}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    {deleteLoading === event.id ? 'Cancelando...' : 'Sim, cancelar evento'}
+                    {deleteLoading === event.id ? 'Excluindo...' : 'Sim, excluir evento'}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

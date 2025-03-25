@@ -29,7 +29,8 @@ export async function getUpcomingEvents(): Promise<Event[]> {
       const { data, error } = await supabase
         .from('events')
         .select('*')
-        // Removidos filtros de status e data para mostrar todos os eventos
+        // Filtrar apenas eventos que não estão cancelados
+        .neq('status', 'cancelled')
         .order('date', { ascending: true });
 
       if (error) throw error;
@@ -43,7 +44,7 @@ export async function getUpcomingEvents(): Promise<Event[]> {
         
         // Utiliza a função RPC que contorna o problema de comparação de tipos
         const { data: rpcData, error: rpcError } = await supabase
-          .rpc('get_all_events'); // Função atualizada para buscar todos os eventos
+          .rpc('get_active_events'); // Função RPC para buscar eventos não cancelados
         
         if (rpcError) {
           console.error('Erro ao buscar eventos via RPC:', rpcError);
@@ -703,13 +704,73 @@ export async function getAllEvents(): Promise<Event[]> {
 }
 
 export async function deleteEvent(id: string): Promise<void> {
-  const { error } = await supabase
-    .from('events')
-    .delete()
-    .eq('id', id);
+  try {
+    // Precisamos excluir em ordem todos os dados relacionados ao evento
+    // para evitar violações de chave estrangeira
 
-  if (error) {
-    console.error('Error deleting event:', error);
+    // 1. Primeiro, buscar todas as participações deste evento para depois excluir itens
+    const { data: attendances, error: attendancesError } = await supabase
+      .from('event_attendances')
+      .select('id')
+      .eq('event_id', id);
+
+    if (attendancesError) {
+      console.error('Erro ao buscar participações do evento:', attendancesError);
+      throw attendancesError;
+    }
+
+    // Se houver participações, precisamos excluir os itens relacionados a cada participação
+    if (attendances && attendances.length > 0) {
+      const attendanceIds = attendances.map(a => a.id);
+
+      // 2. Excluir todos os itens relacionados a estas participações
+      const { error: itemsError } = await supabase
+        .from('event_items')
+        .delete()
+        .in('attendance_id', attendanceIds);
+
+      if (itemsError) {
+        console.error('Erro ao excluir itens do evento:', itemsError);
+        throw itemsError;
+      }
+    }
+
+    // 3. Excluir todas as mensagens relacionadas ao evento
+    const { error: messagesError } = await supabase
+      .from('event_messages')
+      .delete()
+      .eq('event_id', id);
+
+    if (messagesError) {
+      console.error('Erro ao excluir mensagens do evento:', messagesError);
+      throw messagesError;
+    }
+
+    // 4. Excluir todas as participações do evento
+    const { error: attendancesDeleteError } = await supabase
+      .from('event_attendances')
+      .delete()
+      .eq('event_id', id);
+
+    if (attendancesDeleteError) {
+      console.error('Erro ao excluir participações do evento:', attendancesDeleteError);
+      throw attendancesDeleteError;
+    }
+
+    // 5. Finalmente, excluir o evento
+    const { error: eventDeleteError } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', id);
+
+    if (eventDeleteError) {
+      console.error('Erro ao excluir o evento:', eventDeleteError);
+      throw eventDeleteError;
+    }
+
+    console.log(`Evento ${id} e todos os seus dados relacionados foram excluídos com sucesso`);
+  } catch (error) {
+    console.error('Erro durante o processo de exclusão do evento:', error);
     throw error;
   }
 }

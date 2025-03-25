@@ -29,11 +29,12 @@ import UpdateAdminRole from "@/pages/UpdateAdminRole";
 import DBSchemaCheck from "@/pages/DBSchemaCheck";
 import BiblePage from "@/pages/BiblePage";
 import FixPolicies from "@/pages/FixPolicies";
+import DevotionalDetail from "@/pages/DevotionalDetail";
+import DevotionalNew from "@/pages/DevotionalNew";
 
 // Lazy load admin pages para melhorar performance
 const Admin = React.lazy(() => import("@/pages/Admin"));
 const Devotional = React.lazy(() => import("@/pages/Devotional"));
-const DevotionalDetail = React.lazy(() => import("@/pages/DevotionalDetail"));
 
 // Configuração do React Query
 const queryClient = new QueryClient();
@@ -95,6 +96,13 @@ function App() {
                     <React.Suspense fallback={<div>Carregando...</div>}>
                       <Devotional />
                     </React.Suspense>
+                  } />
+                  <Route path="devotional/new" element={
+                    <PrivateRoute requireAdmin>
+                      <React.Suspense fallback={<div>Carregando...</div>}>
+                        <DevotionalNew />
+                      </React.Suspense>
+                    </PrivateRoute>
                   } />
                   <Route path="devotional/:id" element={
                     <React.Suspense fallback={<div>Carregando...</div>}>
