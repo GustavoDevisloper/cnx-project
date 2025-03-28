@@ -38,6 +38,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { EventsDatabaseFix } from '@/components/EventsDatabaseFix';
 import { EventItemsList } from '@/components/EventItemsList';
 import { toast } from '@/hooks/use-toast';
+import { EventChat } from '@/components/EventChat';
 
 const EventDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -55,7 +56,6 @@ const EventDetailPage: React.FC = () => {
   const [messages, setMessages] = useState<EventMessage[]>([]);
   
   const [newItem, setNewItem] = useState<EventItemFormInput>({ name: '', quantity: 1 });
-  const [newMessage, setNewMessage] = useState<EventMessageFormInput>({ content: '' });
   
   const [submitting, setSubmitting] = useState(false);
   const [databaseError, setDatabaseError] = useState<{code?: string, message?: string} | null>(null);
@@ -149,7 +149,14 @@ const EventDetailPage: React.FC = () => {
     
     if (id) {
       subscription = subscribeToEventMessages(id, (message) => {
-        setMessages(prevMessages => [...prevMessages, message]);
+        // Verificar se a mensagem já existe antes de adicionar
+        setMessages(prevMessages => {
+          const messageExists = prevMessages.some(m => m.id === message.id);
+          if (messageExists) {
+            return prevMessages;
+          }
+          return [...prevMessages, message];
+        });
       });
     }
     
@@ -238,19 +245,20 @@ const EventDetailPage: React.FC = () => {
     }
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !isAuthenticated || !id || !newMessage.content.trim()) return;
+  const handleSendMessage = async (content: string) => {
+    if (!user || !isAuthenticated || !id) return;
     
     try {
-      setSubmitting(true);
-      await sendMessage(id, user.id, newMessage);
-      setNewMessage({ content: '' });
+      const message = await sendMessage(id, user.id, { content });
+      // Não precisamos mais adicionar a mensagem manualmente aqui
+      // pois ela será adicionada através da subscription
     } catch (err) {
       console.error('Error sending message:', err);
-      setError('Ocorreu um erro ao enviar mensagem');
-    } finally {
-      setSubmitting(false);
+      toast({
+        title: 'Erro ao enviar mensagem',
+        description: 'Não foi possível enviar sua mensagem. Tente novamente.',
+        variant: 'destructive'
+      });
     }
   };
 
@@ -783,93 +791,31 @@ const EventDetailPage: React.FC = () => {
         </TabsContent>
         
         <TabsContent value="chat">
-          <Card className="h-[500px] flex flex-col">
-            <CardHeader>
-              <CardTitle>Chat do Evento</CardTitle>
-              <CardDescription>
-                {isAuthenticated 
-                  ? attendanceStatus
-                    ? 'Digite sua mensagem...'
-                    : 'Confirme sua presença para participar do chat'
-                  : 'Faça login para enviar mensagens'
-                }
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-grow overflow-hidden">
-              <ScrollArea className="h-[300px] pr-4">
-                {messages.length === 0 ? (
-                  <p className="text-center text-muted-foreground py-4">
-                    Nenhuma mensagem ainda. Seja o primeiro a dizer olá!
-                  </p>
-                ) : (
-                  <div className="space-y-4">
-                    {messages.map((message) => {
-                      const isCurrentUser = user?.id === message.user_id;
-                      return (
-                        <div 
-                          key={message.id} 
-                          className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div className={`flex ${isCurrentUser ? 'flex-row-reverse' : 'flex-row'} items-start max-w-[80%]`}>
-                            <Avatar className={`${isCurrentUser ? 'ml-2' : 'mr-2'} flex-shrink-0`}>
-                              <AvatarImage src={message.user?.avatar_url || ''} />
-                              <AvatarFallback>
-                                {message.user?.name?.substring(0, 2).toUpperCase() || 'U'}
-                              </AvatarFallback>
-                            </Avatar>
-                            <div>
-                              <div 
-                                className={`rounded-lg p-3 ${
-                                  isCurrentUser 
-                                    ? 'bg-primary text-primary-foreground' 
-                                    : 'bg-muted'
-                                }`}
-                              >
-                                <p>{message.content}</p>
-                              </div>
-                              <div 
-                                className={`text-xs text-muted-foreground mt-1 ${
-                                  isCurrentUser ? 'text-right' : 'text-left'
-                                }`}
-                              >
-                                {message.user?.name} · {format(new Date(message.created_at), "HH:mm")}
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+          {isAuthenticated ? (
+            attendanceStatus === 'confirmed' ? (
+              <EventChat 
+                messages={messages} 
+                onSendMessage={handleSendMessage}
+                currentUserId={user?.id || ''} 
+              />
+            ) : (
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="text-center py-6 text-muted-foreground">
+                    <p>Confirme sua presença para participar do chat</p>
                   </div>
-                )}
-              </ScrollArea>
-            </CardContent>
-            <CardFooter>
-              <form onSubmit={handleSendMessage} className="w-full">
-                <div className="flex space-x-2">
-                  <Textarea 
-                    placeholder={
-                      isAuthenticated 
-                        ? attendanceStatus
-                          ? 'Digite sua mensagem...'
-                          : 'Confirme sua presença para enviar mensagens'
-                        : 'Faça login para enviar mensagens'
-                    }
-                    value={newMessage.content}
-                    onChange={(e) => setNewMessage({content: e.target.value})}
-                    className="flex-grow resize-none"
-                    disabled={!isAuthenticated || !attendanceStatus}
-                  />
-                  <Button 
-                    type="submit" 
-                    size="icon"
-                    disabled={!isAuthenticated || !attendanceStatus || !newMessage.content.trim() || submitting}
-                  >
-                    <SendIcon className="h-4 w-4" />
-                  </Button>
+                </CardContent>
+              </Card>
+            )
+          ) : (
+            <Card>
+              <CardContent className="pt-6">
+                <div className="text-center py-6 text-muted-foreground">
+                  <p>Faça login para participar do chat</p>
                 </div>
-              </form>
-            </CardFooter>
-          </Card>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
       </Tabs>
     </div>

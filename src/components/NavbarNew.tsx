@@ -270,6 +270,14 @@ const NavbarNew = () => {
           </NavLink>
           
           <NavLink 
+            to="/biblia"
+            className={({isActive}) => cn("nav-link flex items-center gap-1.5", isActive && "active")}
+          >
+            <BookOpen size={16} />
+            <span>Bíblia</span>
+          </NavLink>
+          
+          <NavLink 
             to="/questions"
             className={({isActive}) => cn("nav-link flex items-center gap-1.5", isActive && "active")}
           >
@@ -457,6 +465,20 @@ const NavbarNew = () => {
           </NavLink>
           
           <NavLink 
+            to="/biblia"
+            className={({isActive}) => cn(
+              "flex items-center px-4 py-3 rounded-md transition-colors text-base",
+              isActive 
+                ? "bg-primary/20 text-primary font-semibold" 
+                : "text-foreground hover:bg-muted"
+            )}
+            onClick={closeMobileMenu}
+          >
+            <BookOpen className="mr-3 h-5 w-5" />
+            <span>Bíblia</span>
+          </NavLink>
+          
+          <NavLink 
             to="/questions"
             className={({isActive}) => cn(
               "flex items-center px-4 py-3 rounded-md transition-colors text-base",
@@ -559,15 +581,6 @@ const NavbarNew = () => {
             )}
           </div>
         </div>
-        
-        {/* Botão de fechar visível dentro do menu */}
-        <button 
-          className="absolute top-4 right-4 p-2 rounded-full bg-muted text-foreground"
-          onClick={closeMobileMenu}
-          aria-label="Fechar menu"
-        >
-          <X className="h-5 w-5" />
-        </button>
       </div>
       
       {/* Overlay para fechar o menu quando clicar fora */}

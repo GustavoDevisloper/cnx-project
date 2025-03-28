@@ -83,10 +83,25 @@ export const getTodayDevotional = async (): Promise<Devotional | null> => {
     if (error) {
       console.error('Erro ao buscar devocional do dia:', error);
       
-      // Tentar buscar o mais recente como fallback
+      // Tentar buscar o mais recente como fallback usando a tabela diretamente
       console.log('Tentando buscar o devocional mais recente...');
+      const today = new Date().toISOString().split('T')[0];
+      
       const { data: latestData, error: latestError } = await supabase
-        .rpc('get_latest_devotional');
+        .from('devotionals')
+        .select(`
+          *,
+          author:author_id (
+            first_name,
+            username,
+            avatar_url
+          )
+        `)
+        .lte('date', today)
+        .order('date', { ascending: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
       
       if (latestError) {
         console.error('Erro ao buscar devocional mais recente:', latestError);
@@ -98,7 +113,6 @@ export const getTodayDevotional = async (): Promise<Devotional | null> => {
         return null;
       }
       
-      // A função agora retorna diretamente um objeto JSONB, não um array
       return await enrichDevotionalData(latestData);
     }
     
@@ -107,7 +121,6 @@ export const getTodayDevotional = async (): Promise<Devotional | null> => {
       return null;
     }
     
-    // A função agora retorna diretamente um objeto JSONB, não um array
     return await enrichDevotionalData(data);
   } catch (error) {
     console.error('Erro ao processar devocional:', error);
@@ -341,9 +354,10 @@ export const getDevotionalComments = async (devotionalId: string): Promise<Devot
  */
 export const addDevotionalComment = async (devotionalId: string, text: string): Promise<DevotionalComment | null> => {
   try {
-    const user = await getCurrentUser();
-    
-    if (!user) {
+    // Primeiro, verificar a sessão do Supabase
+    const { data: session } = await supabase.auth.getSession();
+    if (!session?.session?.user?.id) {
+      console.log('Usuário não está autenticado no Supabase');
       toast({
         title: "Não autenticado",
         description: "Você precisa estar logado para comentar",
@@ -351,14 +365,43 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
       });
       return null;
     }
+
+    const userId = session.session.user.id;
+    console.log('ID do usuário autenticado:', userId);
+
+    // Verificar se o usuário existe na tabela users
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('id, first_name, username, avatar_url')
+      .eq('id', userId)
+      .single();
+
+    if (userError || !userData) {
+      console.error('Erro ao verificar usuário:', userError);
+      toast({
+        title: "Erro de autenticação",
+        description: "Não foi possível verificar suas credenciais",
+        variant: "destructive"
+      });
+      return null;
+    }
+
+    console.log('Dados do usuário:', userData);
+    console.log('Tentando adicionar comentário para o devocional:', devotionalId);
+    
+    const commentData = {
+      devotional_id: devotionalId,
+      user_id: userId,
+      content: text,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    console.log('Dados do comentário:', commentData);
     
     const { data, error } = await supabase
       .from('devotional_comments')
-      .insert({
-        devotional_id: devotionalId,
-        user_id: user.id,
-        content: text
-      })
+      .insert(commentData)
       .select(`
         id,
         content,
@@ -376,18 +419,20 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
       console.error("Erro ao adicionar comentário:", error);
       toast({
         title: "Erro ao comentar",
-        description: "Não foi possível adicionar seu comentário",
+        description: error.message || "Não foi possível adicionar seu comentário",
         variant: "destructive"
       });
       return null;
     }
+    
+    console.log('Comentário adicionado com sucesso:', data);
     
     toast({
       title: "Comentário adicionado",
       description: "Seu comentário foi adicionado com sucesso"
     });
           
-          return {
+    return {
       id: data.id,
       text: data.content,
       author: data.users?.first_name || data.users?.username || 'Usuário',
@@ -397,6 +442,11 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
     };
   } catch (error) {
     console.error("Erro ao adicionar comentário:", error);
+    toast({
+      title: "Erro ao comentar",
+      description: "Ocorreu um erro ao tentar adicionar seu comentário",
+      variant: "destructive"
+    });
     return null;
   }
 };
@@ -476,12 +526,28 @@ export const checkAndPublishDailyDevotional = async (): Promise<Devotional | nul
   try {
     const today = new Date().toISOString().split('T')[0];
     
+    console.log('Buscando devocional para a data:', today);
+    
     // Verificar se já existe um devocional para hoje
-    const { data: existingDevotional } = await supabase
+    const { data: existingDevotional, error } = await supabase
       .from('devotionals')
-      .select('*')
+      .select(`
+        *,
+        author:author_id (
+          first_name,
+          username,
+          avatar_url
+        )
+      `)
       .eq('date', today)
+      .order('created_at', { ascending: false })
+      .limit(1)
       .single();
+    
+    if (error) {
+      console.error('Erro ao buscar devocional do dia:', error);
+      return null;
+    }
     
     if (existingDevotional) {
       console.log('Devocional encontrado para hoje:', existingDevotional.id);
@@ -502,174 +568,76 @@ export const checkAndPublishDailyDevotional = async (): Promise<Devotional | nul
  */
 export const createDevotional = async (devotional: Partial<Devotional>): Promise<string | null> => {
   try {
-    // Verificar autenticação tanto pelo Supabase quanto pelo localStorage
-    let authorId = null;
+    console.log('Iniciando criação do devocional...');
     
-    // Primeiro, tenta obter da sessão do Supabase
-    const { data: sessionData } = await supabase.auth.getSession();
-    if (sessionData?.session?.user?.id) {
-      authorId = sessionData.session.user.id;
-      console.log('ID do usuário obtido da sessão Supabase:', authorId);
-    } 
-    // Se não conseguiu, tenta obter do localStorage
-    else {
-      authorId = localStorage.getItem('current_user_id');
-      console.log('ID do usuário obtido do localStorage:', authorId);
-    }
+    const user = await getCurrentUser();
     
-    if (!authorId) {
+    if (!user) {
       console.error('Usuário não autenticado');
-      toast({
-        title: "Acesso negado",
-        description: "Você precisa estar autenticado para criar um devocional",
-        variant: "destructive"
-      });
-      return null;
+      throw new Error('Você precisa estar logado para criar um devocional');
     }
     
-    // Verificar permissões (apenas administradores podem criar)
-    // Primeiro, tente buscar do localStorage
-    let isUserAuthorized = false;
-    const userStr = localStorage.getItem('current_user');
-    
-    if (userStr) {
-      try {
-        const userData = JSON.parse(userStr);
-        if (userData.role === 'admin' || userData.role === 'leader') {
-          console.log('Permissões verificadas via localStorage:', userData.role);
-          isUserAuthorized = true;
-        }
-      } catch (e) {
-        console.error('Erro ao ler usuário do localStorage:', e);
-      }
+    console.log('Usuário autenticado:', user.id);
+
+    // Verificar se é admin/leader usando o role do próprio user
+    if (!user.role || !['admin', 'leader'].includes(user.role)) {
+      console.error('Usuário não tem permissão:', user.role);
+      throw new Error('Você não tem permissão para criar devocionais');
     }
     
-    // Se não conseguiu verificar pelo localStorage, tenta o banco de dados
-    if (!isUserAuthorized) {
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('role')
-        .eq('id', authorId)
-        .single();
-        
-      if (userError) {
-        console.error('Erro ao verificar permissões:', userError);
-      } else if (userData && (userData.role === 'admin' || userData.role === 'leader')) {
-        console.log('Permissões verificadas via banco de dados:', userData.role);
-        isUserAuthorized = true;
-      }
-    }
-    
-    if (!isUserAuthorized) {
-      console.error('Usuário não tem permissão para criar devocionais');
-      toast({
-        title: "Permissão negada",
-        description: "Apenas administradores podem criar devocionais",
-        variant: "destructive"
-      });
-      return null;
-    }
-    
+    console.log('Usuário tem permissão:', user.role);
+
     // Validar campos obrigatórios
     if (!devotional.title || !devotional.scripture) {
-      toast({
-        title: "Campos incompletos",
-        description: "Título e versículo são obrigatórios",
-        variant: "destructive"
-      });
-      return null;
+      console.error('Campos obrigatórios faltando:', { title: devotional.title, scripture: devotional.scripture });
+      throw new Error('Título e versículo são obrigatórios');
     }
-    
+
     // Mapear os dados para o formato correto da tabela
     const devotionalData = {
-      title: devotional.title,
-      content: devotional.content || '',  // Conteúdo é opcional
-      verse: devotional.scripture,
-      verse_text: devotional.scriptureText || '', // Texto do versículo
-      theme: devotional.theme || 'reflexão',
-      author_id: authorId,
-      author: 'Autor Manual',  // Valor padrão para garantir que o campo NOT NULL seja preenchido
+      title: devotional.title.trim(),
+      content: (devotional.content || '').trim() || 'Sem conteúdo',
+      scripture: devotional.scripture.trim(),
+      author_id: user.id,
       date: devotional.date || new Date().toISOString().split('T')[0],
-      is_generated: false,  // Nunca será gerado automaticamente
-      "references": devotional.references || [],
-      image_url: devotional.imageSrc || '',
-      transmission_link: devotional.transmissionLink || '',
+      theme: (devotional.theme || 'reflexão').trim(),
+      is_generated: false,
+      references: [],
+      image_url: '',
+      transmission_link: '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
-    
-    console.log("Criando devocional:", devotionalData);
-    
-    let devotionalId = null;
-    
-    // Usar diretamente o método RPC para evitar problemas com RLS
-    console.log('Criando devocional via RPC...');
-    
-    // Tratar problema de timeout ou resposta vazia
-    try {
-      const { data: rpcResult, error: rpcError } = await supabase.rpc('create_devotional', {
-        devotional_data: devotionalData
-      });
-      
-      // Log adicional para depurar resultado completo da chamada RPC
-      console.log('Resposta completa da RPC:', { rpcResult, rpcError, status: rpcError ? 'erro' : rpcResult ? 'sucesso' : 'indefinido' });
-      
-      if (rpcError) {
-        console.error('Erro ao criar devocional via RPC:', rpcError);
-        toast({
-          title: "Erro ao salvar",
-          description: "Não foi possível salvar o devocional. Tente novamente mais tarde.",
-          variant: "destructive"
-        });
-        return null;
-      } 
-      
-      // Verificar se o resultado está vindo como null ou undefined
-      if (rpcResult === null || rpcResult === undefined) {
-        console.error('Função RPC retornou valor nulo ou indefinido. Verifique a implementação da função no banco de dados.');
-        
-        // Log mais detalhado para depuração
-        console.log('Detalhes da sessão:', await supabase.auth.getSession());
-        console.log('Detalhes do usuário:', await getCurrentUser());
-        
-        toast({
-          title: "Erro ao salvar",
-          description: "A função do banco de dados não retornou um ID válido. Contate o administrador.",
-          variant: "destructive"
-        });
-        return null;
-      }
-      
-      if (rpcResult) {
-        devotionalId = rpcResult;
-        console.log('Devocional criado com sucesso via RPC:', devotionalId);
-        
-        toast({
-          title: "Devocional criado",
-          description: "O devocional foi criado com sucesso",
-        });
-        
-        return devotionalId;
-      }
-    } catch (rpcCallError) {
-      console.error('Erro ao chamar a função RPC:', rpcCallError);
-      toast({
-        title: "Erro de comunicação",
-        description: "Problema ao comunicar com o banco de dados: " + rpcCallError.message,
-        variant: "destructive"
-      });
-      return null;
+
+    console.log('Dados do devocional mapeados:', devotionalData);
+
+    // Tentar inserir diretamente na tabela
+    console.log('Inserindo devocional na tabela...');
+    const { data: insertData, error: insertError } = await supabase
+      .from('devotionals')
+      .insert(devotionalData)
+      .select()
+      .single();
+
+    if (insertError) {
+      console.error('Erro ao inserir devocional:', insertError);
+      throw new Error('Não foi possível salvar o devocional: ' + insertError.message);
     }
-    
-    return null;
+
+    if (!insertData) {
+      throw new Error('Erro interno ao criar devocional');
+    }
+
+    console.log('Devocional criado com sucesso:', insertData);
+    toast({
+      title: "Devocional criado",
+      description: "O devocional foi criado com sucesso"
+    });
+
+    return insertData.id;
   } catch (error) {
     console.error('Erro ao criar devocional:', error);
-    toast({
-      title: "Erro inesperado",
-      description: "Ocorreu um erro ao criar o devocional. Tente novamente mais tarde.",
-      variant: "destructive"
-    });
-    return null;
+    throw error;
   }
 };
 

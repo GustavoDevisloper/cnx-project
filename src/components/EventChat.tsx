@@ -7,13 +7,16 @@ import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { EventMessage } from '@/types/event';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { cn } from '@/lib/utils';
 
 interface EventChatProps {
   messages: EventMessage[];
   onSendMessage: (content: string) => Promise<void>;
+  currentUserId: string;
 }
 
-export function EventChat({ messages, onSendMessage }: EventChatProps) {
+export function EventChat({ messages, onSendMessage, currentUserId }: EventChatProps) {
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -43,7 +46,9 @@ export function EventChat({ messages, onSendMessage }: EventChatProps) {
     }
   };
   
-  const getInitials = (name: string) => {
+  const getInitials = (name?: string | null) => {
+    if (!name) return 'U';
+    
     return name
       .split(' ')
       .map(part => part[0])
@@ -60,34 +65,56 @@ export function EventChat({ messages, onSendMessage }: EventChatProps) {
   };
   
   return (
-    <Card className="flex flex-col" style={{ height: '500px' }}>
-      <CardContent className="flex-grow overflow-y-auto p-4">
-        {messages.length > 0 ? (
-          <div className="space-y-4">
-            {messages.map(msg => (
-              <div key={msg.id} className="flex gap-3">
-                <Avatar className="h-8 w-8 flex-shrink-0">
-                  <AvatarImage src={msg.user_avatar} alt={msg.user_name} />
-                  <AvatarFallback>{getInitials(msg.user_name)}</AvatarFallback>
-                </Avatar>
-                <div className="flex-grow">
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{msg.user_name}</span>
-                    <span className="text-xs text-muted-foreground">
-                      {formatMessageTime(msg.created_at)}
-                    </span>
+    <Card className="flex flex-col h-[500px]">
+      <CardContent className="flex-grow overflow-hidden p-4">
+        <ScrollArea className="h-full pr-4">
+          {messages.length > 0 ? (
+            <div className="space-y-4">
+              {messages.map(msg => {
+                const isCurrentUser = msg.user_id === currentUserId;
+                
+                return (
+                  <div 
+                    key={msg.id} 
+                    className={cn(
+                      "flex gap-3",
+                      isCurrentUser && "flex-row-reverse"
+                    )}
+                  >
+                    <Avatar className="h-8 w-8 flex-shrink-0">
+                      <AvatarImage src={msg.user_avatar || ''} alt={msg.user_name || 'Usuário'} />
+                      <AvatarFallback>{getInitials(msg.user_name)}</AvatarFallback>
+                    </Avatar>
+                    <div className={cn(
+                      "flex-grow max-w-[70%]",
+                      isCurrentUser && "flex flex-col items-end"
+                    )}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{msg.user_name || 'Usuário'}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {formatMessageTime(msg.created_at)}
+                        </span>
+                      </div>
+                      <div className={cn(
+                        "mt-1 px-4 py-2 rounded-lg",
+                        isCurrentUser 
+                          ? "bg-primary text-primary-foreground" 
+                          : "bg-muted"
+                      )}>
+                        <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
+                      </div>
+                    </div>
                   </div>
-                  <p className="mt-1 text-sm whitespace-pre-wrap break-words">{msg.content}</p>
-                </div>
-              </div>
-            ))}
-            <div ref={messagesEndRef} />
-          </div>
-        ) : (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            <p>Ainda não há mensagens. Inicie a conversa!</p>
-          </div>
-        )}
+                );
+              })}
+              <div ref={messagesEndRef} />
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center text-muted-foreground">
+              <p>Ainda não há mensagens. Inicie a conversa!</p>
+            </div>
+          )}
+        </ScrollArea>
       </CardContent>
       
       <CardFooter className="border-t p-4">
@@ -96,7 +123,7 @@ export function EventChat({ messages, onSendMessage }: EventChatProps) {
             value={message}
             onChange={e => setMessage(e.target.value)}
             placeholder="Digite sua mensagem..."
-            className="min-h-[60px] flex-grow"
+            className="min-h-[60px] flex-grow resize-none"
             disabled={sending}
           />
           <Button 

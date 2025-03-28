@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createDevotional, testCreateDevotionalRPC, diagnoseDevotionalsTable, testInsertDevotional } from '@/services/devotionalService';
-import { isAdmin } from '@/services/authService';
+import { useAuth } from '@/hooks/auth';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -56,150 +56,78 @@ const DevotionalNew = () => {
   const [versiculo, setVersiculo] = useState('');
   const [conteudo, setConteudo] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [rpcStatus, setRpcStatus] = useState<string | null>(null);
-  const [tableStructure, setTableStructure] = useState<any>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
-
-  console.log("DevotionalNew component mounted");
+  const { user } = useAuth();
 
   useEffect(() => {
-    const checkAdminStatus = async () => {
-      // Verificar se o usuário é administrador - usando função assíncrona
-      const isAdminUser = await isAdmin();
-      if (!isAdminUser) {
-        toast({
-          title: "Acesso negado",
-          description: "Apenas administradores podem criar devocionais",
-          variant: "destructive"
-        });
-        navigate('/');
-        return;
-      }
-      document.title = "Conexão Jovem | Novo Devocional";
-    };
-
-    checkAdminStatus();
-  }, [navigate]);
+    document.title = "Conexão Jovem | Novo Devocional";
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validar campos obrigatórios
-    if (!titulo || !livro || !capitulo || !versiculo) {
+    if (isSubmitting) {
+      console.log('Já existe uma submissão em andamento...');
+      return;
+    }
+
+    if (!titulo || !livro || !capitulo || !versiculo || !conteudo) {
       toast({
         title: "Campos incompletos",
-        description: "Preencha todos os campos obrigatórios",
+        description: "Preencha todos os campos obrigatórios (título, versículo e conteúdo)",
         variant: "destructive"
       });
       return;
     }
 
-    // Construir a referência do versículo
     const versiculoRef = `${livro} ${capitulo}:${versiculo}`;
-    
-    // Determinar o tema final (padrão ou personalizado)
     const temaFinal = tema === 'Outro' ? temaCustom : tema;
 
     setIsLoading(true);
+    setIsSubmitting(true);
 
     try {
-      // Chamar a função de criação de devocional
-      const devotionalId = await createDevotional({
+      console.log('Preparando dados para envio:', {
         title: titulo,
         scripture: versiculoRef,
-        theme: temaFinal,
         content: conteudo,
-        date: new Date().toISOString().split('T')[0] // Hoje
+        theme: temaFinal
+      });
+
+      const devotionalId = await createDevotional({
+        title: titulo,
+        content: conteudo,
+        scripture: versiculoRef,
+        theme: temaFinal,
+        date: new Date().toISOString().split('T')[0]
       });
 
       if (devotionalId) {
+        console.log('Devocional criado com sucesso, ID:', devotionalId);
         toast({
           title: "Devocional criado",
           description: "O devocional foi criado com sucesso"
         });
         navigate('/devotional');
+      } else {
+        console.error('Falha ao criar devocional: ID não retornado');
+        toast({
+          title: "Erro",
+          description: "Não foi possível criar o devocional. Verifique os logs para mais detalhes.",
+          variant: "destructive"
+        });
       }
     } catch (error) {
       console.error("Erro ao criar devocional:", error);
       toast({
         title: "Erro",
-        description: "Ocorreu um erro ao criar o devocional",
+        description: error.message || "Ocorreu um erro ao criar o devocional",
         variant: "destructive"
       });
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleTestRPC = async () => {
-    setIsLoading(true);
-    try {
-      const result = await testCreateDevotionalRPC();
-      setRpcStatus(result.message);
-      toast({
-        title: result.success ? "RPC Disponível" : "Erro RPC",
-        description: result.message,
-        variant: result.success ? "default" : "destructive"
-      });
-    } catch (error) {
-      console.error("Erro ao testar RPC:", error);
-      setRpcStatus("Erro ao testar RPC: " + (error.message || "Erro desconhecido"));
-      toast({
-        title: "Erro",
-        description: "Erro ao testar RPC",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleDiagnose = async () => {
-    setIsLoading(true);
-    try {
-      const result = await diagnoseDevotionalsTable();
-      setRpcStatus(result.message);
-      setTableStructure(result.structure);
-      
-      toast({
-        title: result.success ? "Diagnóstico Concluído" : "Problema Detectado",
-        description: result.message,
-        variant: result.success ? "default" : "destructive"
-      });
-    } catch (error) {
-      console.error("Erro ao diagnosticar tabela:", error);
-      setRpcStatus("Erro ao diagnosticar: " + (error.message || "Erro desconhecido"));
-      toast({
-        title: "Erro",
-        description: "Ocorreu um erro ao diagnosticar a tabela",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleTestInsert = async () => {
-    setIsLoading(true);
-    try {
-      const result = await testInsertDevotional();
-      setRpcStatus(result.message);
-      
-      toast({
-        title: result.success ? "Teste Bem-Sucedido" : "Falha no Teste",
-        description: result.message,
-        variant: result.success ? "default" : "destructive"
-      });
-    } catch (error) {
-      console.error("Erro ao testar inserção:", error);
-      setRpcStatus("Erro ao testar inserção: " + (error.message || "Erro desconhecido"));
-      toast({
-        title: "Erro",
-        description: "Ocorreu um erro ao testar inserção",
-        variant: "destructive"
-      });
-    } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -214,43 +142,6 @@ const DevotionalNew = () => {
             <h1 className="text-3xl font-bold">Novo Devocional</h1>
           </div>
 
-          {/* Adicionar botão de diagnóstico */}
-          <div className="mb-4">
-            <div className="flex gap-2 mb-2 flex-wrap">
-              <Button 
-                variant="outline" 
-                onClick={handleTestRPC} 
-                disabled={isLoading}
-              >
-                Testar Função RPC
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleDiagnose} 
-                disabled={isLoading}
-              >
-                Diagnosticar Tabela
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={handleTestInsert} 
-                disabled={isLoading}
-              >
-                Testar Inserção
-              </Button>
-            </div>
-            {rpcStatus && (
-              <div className={`p-2 rounded text-sm ${rpcStatus.includes('NÃO') || rpcStatus.includes('Erro') || rpcStatus.includes('Falha') ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
-                {rpcStatus}
-              </div>
-            )}
-            {tableStructure && (
-              <div className="mt-2 p-2 bg-gray-100 rounded text-xs overflow-auto max-h-32">
-                <pre>{JSON.stringify(tableStructure, null, 2)}</pre>
-              </div>
-            )}
-          </div>
-
           <Card>
             <CardHeader>
               <CardTitle>Criar Devocional</CardTitle>
@@ -262,7 +153,6 @@ const DevotionalNew = () => {
 
             <form onSubmit={handleSubmit}>
               <CardContent className="space-y-6">
-                {/* Título */}
                 <div className="space-y-2">
                   <Label htmlFor="titulo" className="flex items-center gap-2">
                     <Hash size={16} />
@@ -277,7 +167,6 @@ const DevotionalNew = () => {
                   />
                 </div>
 
-                {/* Tema */}
                 <div className="space-y-2">
                   <Label htmlFor="tema" className="flex items-center gap-2">
                     <BookMarked size={16} />
@@ -306,7 +195,6 @@ const DevotionalNew = () => {
                   )}
                 </div>
 
-                {/* Referência Bíblica */}
                 <div className="space-y-2">
                   <Label htmlFor="versiculo" className="flex items-center gap-2">
                     <BookOpen size={16} />
@@ -355,7 +243,6 @@ const DevotionalNew = () => {
                   )}
                 </div>
 
-                {/* Conteúdo (opcional) */}
                 <div className="space-y-2">
                   <Label htmlFor="conteudo" className="flex items-center gap-2">
                     <AlignLeft size={16} />
