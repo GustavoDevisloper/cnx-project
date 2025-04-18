@@ -86,4 +86,113 @@ window.addEventListener('beforeunload', () => {
   sessionStorage.removeItem('registration_in_progress')
 })
 
+/**
+ * Verifica se o serviço Supabase está acessível
+ * Com tratamento específico para o erro ERR_NAME_NOT_RESOLVED e mecanismo de retry
+ */
+export const checkSupabaseConnectivity = async (retryCount = 1): Promise<boolean> => {
+  try {
+    if (!window.navigator.onLine) return false;
+    
+    // Verificar se temos uma resposta em cache recente (últimos 30 segundos)
+    const cachedValue = localStorage.getItem('supabase_connectivity_cache');
+    const cachedTimestamp = localStorage.getItem('supabase_connectivity_timestamp');
+    
+    if (cachedValue && cachedTimestamp) {
+      const timestamp = parseInt(cachedTimestamp);
+      const now = Date.now();
+      
+      // Se o cache for válido (menos de 30 segundos), usar o valor em cache
+      if (now - timestamp < 30000) {
+        return cachedValue === 'true';
+      }
+    }
+    
+    // Primeira tentativa - usar o health check do Supabase
+    try {
+      const response = await fetch(`${supabase.supabaseUrl}/rest/v1/`, {
+        method: 'HEAD',
+        headers: {
+          'apikey': supabase.supabaseKey,
+        },
+        // Definir um timeout curto para evitar esperas longas
+        signal: AbortSignal.timeout(3000)
+      });
+      
+      if (response.ok) {
+        console.log("✅ Serviço Supabase disponível via fetch");
+        // Armazenar resultado positivo em cache
+        localStorage.setItem('supabase_connectivity_cache', 'true');
+        localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+        return true;
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Primeiro teste de conectividade falhou:", e.name);
+      
+      // Verificar especificamente o erro ERR_NAME_NOT_RESOLVED
+      if (e.message && e.message.includes('ERR_NAME_NOT_RESOLVED')) {
+        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        // Armazenar resultado negativo em cache
+        localStorage.setItem('supabase_connectivity_cache', 'false');
+        localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+        return false;
+      }
+    }
+    
+    // Segunda tentativa - usar o Supabase SDK para uma consulta simples
+    try {
+      const { count, error } = await supabase
+        .from('users')
+        .select('id', { count: 'exact', head: true })
+        .limit(1)
+        .maybeSingle();
+      
+      if (!error) {
+        console.log("✅ Serviço Supabase disponível via SDK");
+        // Armazenar resultado positivo em cache
+        localStorage.setItem('supabase_connectivity_cache', 'true');
+        localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+        return true;
+      } else if (error.message && error.message.includes('ERR_NAME_NOT_RESOLVED')) {
+        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        // Armazenar resultado negativo em cache
+        localStorage.setItem('supabase_connectivity_cache', 'false');
+        localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+        return false;
+      }
+    } catch (e: any) {
+      console.warn("⚠️ Segundo teste de conectividade falhou:", e);
+      
+      // Verificar especificamente o erro ERR_NAME_NOT_RESOLVED
+      if (e.message && e.message.includes('ERR_NAME_NOT_RESOLVED')) {
+        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        // Armazenar resultado negativo em cache
+        localStorage.setItem('supabase_connectivity_cache', 'false');
+        localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+        return false;
+      }
+    }
+    
+    // Se todas as tentativas falharam e ainda temos tentativas disponíveis, tentar novamente
+    if (retryCount > 0) {
+      console.log(`🔄 Tentando novamente verificar conectividade (${retryCount} tentativas restantes)...`);
+      // Esperar 1 segundo antes de tentar novamente
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      return checkSupabaseConnectivity(retryCount - 1);
+    }
+    
+    console.error("❌ Serviço Supabase não está acessível após múltiplas tentativas");
+    // Armazenar resultado negativo em cache
+    localStorage.setItem('supabase_connectivity_cache', 'false');
+    localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+    return false;
+  } catch (e) {
+    console.error("❌ Erro ao verificar conectividade com Supabase:", e);
+    // Armazenar resultado negativo em cache
+    localStorage.setItem('supabase_connectivity_cache', 'false');
+    localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
+    return false;
+  }
+};
+
 export default supabase 

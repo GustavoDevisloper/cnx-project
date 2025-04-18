@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider as CustomThemeProvider } from "@/contexts/ThemeContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -31,6 +31,8 @@ import BiblePage from "@/pages/BiblePage";
 import FixPolicies from "@/pages/FixPolicies";
 import DevotionalDetail from "@/pages/DevotionalDetail";
 import DevotionalNew from "@/pages/DevotionalNew";
+import { syncPendingProfileUpdates } from "@/services/authService";
+import { syncPendingDevotionals } from "@/services/devotionalService";
 
 // Lazy load admin pages para melhorar performance
 const Admin = React.lazy(() => import("@/pages/Admin"));
@@ -40,6 +42,27 @@ const Devotional = React.lazy(() => import("@/pages/Devotional"));
 const queryClient = new QueryClient();
 
 function App() {
+  useEffect(() => {
+    // Sincronizar atualizações pendentes ao iniciar
+    if (window.navigator.onLine) {
+      setTimeout(() => {
+        // Sincronizar perfis pendentes
+        syncPendingProfileUpdates().then(updated => {
+          if (updated) {
+            console.log("✅ Perfis pendentes foram sincronizados");
+          }
+        });
+        
+        // Sincronizar devocionais pendentes
+        syncPendingDevotionals().then(updated => {
+          if (updated) {
+            console.log("✅ Devocionais pendentes foram sincronizados");
+          }
+        });
+      }, 5000); // Atraso de 5 segundos após carregar a aplicação
+    }
+  }, []);
+
   return (
     <CustomThemeProvider>
       <QueryClientProvider client={queryClient}>

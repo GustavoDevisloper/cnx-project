@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createDevotional, testCreateDevotionalRPC, diagnoseDevotionalsTable, testInsertDevotional } from '@/services/devotionalService';
+import { createDevotional, testCreateDevotionalRPC, diagnoseDevotionalsTable, testInsertDevotional, getPendingDevotionals } from '@/services/devotionalService';
 import { useAuth } from '@/hooks/auth';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -9,7 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from '@/hooks/use-toast';
-import { ArrowLeft, BookOpen, AlignLeft, Calendar, Hash, BookMarked } from 'lucide-react';
+import { ArrowLeft, BookOpen, AlignLeft, Calendar, Hash, BookMarked, WifiOff } from 'lucide-react';
+import { checkSupabaseConnectivity } from "@/lib/supabase";
 
 // Lista de temas comuns
 const temas = [
@@ -59,9 +60,47 @@ const DevotionalNew = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [hasConnectivity, setHasConnectivity] = useState<boolean>(true);
+  const [pendingCount, setPendingCount] = useState<number>(0);
 
   useEffect(() => {
     document.title = "Conexão Jovem | Novo Devocional";
+  }, []);
+
+  // Verificar conectividade e devocionais pendentes ao carregar
+  useEffect(() => {
+    const checkConnectivity = async () => {
+      const isOnline = window.navigator.onLine;
+      const isSupabaseAvailable = isOnline ? await checkSupabaseConnectivity() : false;
+      setHasConnectivity(isSupabaseAvailable);
+      
+      // Verificar devocionais pendentes
+      const pendingDevotionals = getPendingDevotionals();
+      setPendingCount(pendingDevotionals.length);
+    };
+    
+    checkConnectivity();
+    
+    // Adicionar listeners para mudanças de conectividade
+    const handleOnline = () => setHasConnectivity(true);
+    const handleOffline = () => setHasConnectivity(false);
+    
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    // Listener para atualização de devocionais sincronizados
+    const handleSync = () => {
+      const pendingDevotionals = getPendingDevotionals();
+      setPendingCount(pendingDevotionals.length);
+    };
+    
+    window.addEventListener('devotionals-sync-completed', handleSync);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('devotionals-sync-completed', handleSync);
+    };
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -95,6 +134,15 @@ const DevotionalNew = () => {
         theme: temaFinal
       });
 
+      // Mostrar aviso se não houver conectividade
+      if (!hasConnectivity) {
+        toast({
+          title: "Modo offline ativado",
+          description: "O devocional será salvo localmente e sincronizado quando houver conexão",
+          variant: "default"
+        });
+      }
+
       const devotionalId = await createDevotional({
         title: titulo,
         content: conteudo,
@@ -105,10 +153,20 @@ const DevotionalNew = () => {
 
       if (devotionalId) {
         console.log('Devocional criado com sucesso, ID:', devotionalId);
+        
+        // Atualizar contagem de pendentes após criar um novo
+        if (!hasConnectivity) {
+          const pendingDevotionals = getPendingDevotionals();
+          setPendingCount(pendingDevotionals.length);
+        }
+        
         toast({
           title: "Devocional criado",
-          description: "O devocional foi criado com sucesso"
+          description: hasConnectivity 
+            ? "O devocional foi criado com sucesso"
+            : "O devocional foi salvo localmente e será sincronizado quando houver conexão"
         });
+        
         navigate('/devotional');
       } else {
         console.error('Falha ao criar devocional: ID não retornado');
@@ -141,6 +199,23 @@ const DevotionalNew = () => {
             </Button>
             <h1 className="text-3xl font-bold">Novo Devocional</h1>
           </div>
+          
+          {/* Indicador de Modo Offline */}
+          {!hasConnectivity && (
+            <div className="bg-yellow-100 dark:bg-yellow-900 border border-yellow-300 dark:border-yellow-800 rounded-md p-4 mb-6">
+              <div className="flex items-center">
+                <WifiOff className="h-5 w-5 text-yellow-600 dark:text-yellow-500 mr-2" />
+                <span className="font-medium text-yellow-800 dark:text-yellow-400">
+                  Modo offline: Os devocionais criados serão salvos localmente e sincronizados quando a conexão for restaurada.
+                </span>
+              </div>
+              {pendingCount > 0 && (
+                <div className="mt-2 text-sm text-yellow-700 dark:text-yellow-400">
+                  {pendingCount} devocional(is) pendente(s) de sincronização.
+                </div>
+              )}
+            </div>
+          )}
 
           <Card>
             <CardHeader>

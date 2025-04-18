@@ -1,4 +1,4 @@
-import { supabase } from './supabaseClient';
+import { supabase, checkSupabaseConnectivity } from '@/lib/supabase';
 import { toast } from '@/hooks/use-toast';
 
 // Tipos
@@ -733,7 +733,7 @@ export async function getUserById(userId: string): Promise<User | null> {
 
 /**
  * Atualizar perfil do usuário
- * Versão simplificada que atualiza os dados do perfil na tabela users
+ * Versão melhorada que lida com problemas de conectividade e atualiza localmente se necessário
  */
 export async function updateUserProfile(userId: string, userData: Partial<User> & { displayName?: string, avatarUrl?: string, username?: string }): Promise<User | null> {
   try {
@@ -755,53 +755,73 @@ export async function updateUserProfile(userId: string, userData: Partial<User> 
     });
     
     let updatedProfile = null;
-    let hasRecursionError = false;
+    let hasConnectivityError = false;
     
-    try {
-      // Atualizar na tabela users
-      const { data, error } = await supabase
-        .from('users')
-        .update(dataToUpdate)
-        .eq('id', userId)
-        .select()
-        .single();
-        
-      if (error) {
-        // Verificar se é um erro de recursão
-        if (error.message && error.message.includes('infinite recursion')) {
-          console.warn(`⚠️ Erro de recursão RLS ao atualizar perfil, usando fallback local`);
-          hasRecursionError = true;
+    // Verificar conectividade com o Supabase antes de tentar atualizar
+    const isSupabaseAvailable = await checkSupabaseConnectivity();
+    
+    if (!isSupabaseAvailable) {
+      console.warn("⚠️ Supabase não está acessível. Usando fallback local.");
+      hasConnectivityError = true;
+    } else {
+      try {
+        // Atualizar na tabela users
+        const { data, error } = await supabase
+          .from('users')
+          .update(dataToUpdate)
+          .eq('id', userId)
+          .select()
+          .single();
+          
+        if (error) {
+          // Verificar se é um erro de recursão ou conectividade
+          if (error.message && (
+              error.message.includes('infinite recursion') ||
+              error.message.includes('ERR_NAME_NOT_RESOLVED') ||
+              error.message.includes('Failed to fetch')
+          )) {
+            console.warn(`⚠️ Erro de conectividade ao atualizar perfil, usando fallback local`);
+            hasConnectivityError = true;
+          } else {
+            console.error(`❌ Erro ao atualizar perfil: ${error.message}`);
+            toast({
+              title: "Erro ao atualizar perfil",
+              description: "Não foi possível salvar as alterações no servidor",
+              variant: "destructive"
+            });
+          }
         } else {
-          console.error(`❌ Erro ao atualizar perfil: ${error.message}`);
+          updatedProfile = data;
+        }
+      } catch (dbError: any) {
+        console.error(`❌ Erro ao atualizar perfil: ${dbError?.message || 'Erro desconhecido'}`);
+        
+        // Verificar se é um erro de conectividade
+        if (dbError?.message && (
+            dbError.message.includes('Failed to fetch') || 
+            dbError.message.includes('ERR_NAME_NOT_RESOLVED') ||
+            dbError.message.includes('NetworkError') ||
+            dbError.message.includes('network')
+        )) {
+        
+          console.warn("⚠️ Problema de conectividade detectado, salvando alterações localmente");
+          hasConnectivityError = true;
+        } else {
           toast({
             title: "Erro ao atualizar perfil",
-            description: "Não foi possível salvar as alterações",
+            description: "Ocorreu um erro ao comunicar com o banco de dados",
             variant: "destructive"
           });
-          return null;
+          
+          // Se não conseguiu atualizar no servidor, vamos pelo menos salvar localmente
+          hasConnectivityError = true;
         }
-      } else {
-        updatedProfile = data;
-      }
-    } catch (dbError: any) {
-      console.error(`❌ Erro de banco de dados: ${dbError.message}`);
-      // Verificar se é um erro de recursão
-      if (dbError.message && dbError.message.includes('infinite recursion')) {
-        console.warn(`⚠️ Erro de recursão RLS ao atualizar perfil, usando fallback local`);
-        hasRecursionError = true;
-      } else {
-        toast({
-          title: "Erro ao atualizar perfil",
-          description: "Ocorreu um erro ao comunicar com o banco de dados",
-          variant: "destructive"
-        });
-        return null;
       }
     }
     
-    // Se tivemos erro de recursão OU se a atualização foi bem-sucedida, atualizar localStorage
+    // Se encontramos erro de conectividade OU se a atualização foi bem-sucedida, atualizar localStorage
     
-    // Atualizar no localStorage
+    // Atualizar no localStorage (sempre)
     const cachedUserStr = localStorage.getItem('current_user');
     if (cachedUserStr) {
       try {
@@ -810,9 +830,10 @@ export async function updateUserProfile(userId: string, userData: Partial<User> 
           // Combinar o usuário atual com os dados atualizados
           const updatedUser = { ...cachedUser, ...dataToUpdate };
           localStorage.setItem('current_user', JSON.stringify(updatedUser));
+          localStorage.setItem('current_user_cache_time', Date.now().toString());
           
-          // Se tivemos erro de recursão, usamos o objeto do cache como fallback
-          if (hasRecursionError) {
+          // Se tivemos erro de conectividade, usamos o objeto do cache como fallback
+          if (hasConnectivityError || !updatedProfile) {
             updatedProfile = updatedUser;
           }
         }
@@ -840,12 +861,36 @@ export async function updateUserProfile(userId: string, userData: Partial<User> 
       }
     }
     
+    // Se não temos perfil atualizado mas temos os dados, criar um objeto básico
+    if (!updatedProfile && hasConnectivityError) {
+      updatedProfile = {
+        id: userId,
+        ...dataToUpdate,
+        role: 'user',
+      } as User;
+    }
+    
+    // Registrar o perfil nas alterações pendentes (quando voltar online)
+    if (hasConnectivityError) {
+      try {
+        // Salvar alterações pendentes para sincronizar quando reconectar
+        const pendingUpdates = JSON.parse(localStorage.getItem('pending_profile_updates') || '{}');
+        pendingUpdates[userId] = {
+          ...pendingUpdates[userId],
+          ...dataToUpdate,
+          timestamp: Date.now()
+        };
+        localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
+      } catch (e) {
+        console.error('Erro ao salvar alterações pendentes:', e);
+      }
+    }
+    
     // Mostrar mensagem de sucesso
-    console.log(`✅ Perfil atualizado ${hasRecursionError ? 'localmente' : 'com sucesso'}`);
     toast({
       title: "Perfil atualizado",
-      description: hasRecursionError 
-        ? "As alterações foram salvas localmente devido a limitações de conectividade"
+      description: hasConnectivityError 
+        ? "As alterações foram salvas localmente e serão sincronizadas quando houver conexão"
         : "As alterações foram salvas com sucesso"
     });
     
@@ -869,12 +914,55 @@ export async function updateUserProfile(userId: string, userData: Partial<User> 
     
     return updatedProfile as User;
   } catch (error: any) {
-    console.error(`❌ Erro inesperado: ${error?.message}`);
+    console.error(`❌ Erro inesperado: ${error?.message || 'Erro desconhecido'}`);
+    
+    // Verificar se o erro é de conectividade
+    if (error?.message && (
+        error.message.includes('Failed to fetch') || 
+        error.message.includes('ERR_NAME_NOT_RESOLVED') ||
+        error.message.includes('NetworkError') ||
+        error.message.includes('network')
+    )) {
+      console.warn("⚠️ Problema de conectividade, tentando salvar localmente...");
+      
+      // Salvar apenas localmente
+      try {
+        const cachedUserStr = localStorage.getItem('current_user');
+        if (cachedUserStr && userId) {
+          const cachedUser = JSON.parse(cachedUserStr);
+          if (cachedUser.id === userId) {
+            // Atualizar localmente
+            const updatedUser = { ...cachedUser, ...userData };
+            localStorage.setItem('current_user', JSON.stringify(updatedUser));
+            
+            toast({
+              title: "Perfil atualizado localmente",
+              description: "As alterações foram salvas apenas no dispositivo devido a problemas de conexão"
+            });
+            
+            // Registrar para sincronizar depois
+            const pendingUpdates = JSON.parse(localStorage.getItem('pending_profile_updates') || '{}');
+            pendingUpdates[userId] = {
+              ...pendingUpdates[userId],
+              ...userData,
+              timestamp: Date.now()
+            };
+            localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
+            
+            return updatedUser as User;
+          }
+        }
+      } catch (e) {
+        console.error('Erro ao salvar localmente:', e);
+      }
+    }
+    
     toast({
       title: "Erro ao atualizar perfil",
-      description: "Ocorreu um erro inesperado ao salvar as alterações",
+      description: "Ocorreu um erro inesperado. Verifique sua conexão e tente novamente.",
       variant: "destructive"
     });
+    
     return null;
   }
 }
@@ -1149,4 +1237,91 @@ export async function updateUserRole(userId: string, newRole: string): Promise<b
     console.error(`❌ Erro ao atualizar papel do usuário: ${error?.message}`);
     throw error;
   }
+}
+
+/**
+ * Sincroniza alterações pendentes de perfil quando usuário fica online
+ */
+export const syncPendingProfileUpdates = async () => {
+  try {
+    // Verificar se há conexão
+    if (!window.navigator.onLine) {
+      console.log("🔄 Tentativa de sincronização ignorada: usuário offline");
+      return false;
+    }
+    
+    // Verificar se há alterações pendentes
+    const pendingUpdatesStr = localStorage.getItem('pending_profile_updates');
+    if (!pendingUpdatesStr) return false;
+    
+    const pendingUpdates = JSON.parse(pendingUpdatesStr);
+    const userIds = Object.keys(pendingUpdates);
+    
+    if (userIds.length === 0) {
+      localStorage.removeItem('pending_profile_updates');
+      return false;
+    }
+    
+    console.log(`🔄 Sincronizando ${userIds.length} perfis pendentes...`);
+    
+    // Processar cada usuário pendente
+    for (const userId of userIds) {
+      const updates = pendingUpdates[userId];
+      
+      // Pular atualizações muito antigas (mais de 7 dias)
+      const updateTime = updates.timestamp || Date.now();
+      const isOld = Date.now() - updateTime > 7 * 24 * 60 * 60 * 1000;
+      
+      if (isOld) {
+        console.log(`⏰ Ignorando atualização antiga para ${userId}`);
+        continue;
+      }
+      
+      try {
+        // Remover campos de controle
+        const { timestamp, ...dataToUpdate } = updates;
+        
+        // Aplicar no servidor
+        const { error } = await supabase
+          .from('users')
+          .update(dataToUpdate)
+          .eq('id', userId);
+          
+        if (error) {
+          console.error(`❌ Falha ao sincronizar perfil ${userId}:`, error.message);
+          continue;
+        }
+        
+        console.log(`✅ Perfil ${userId} sincronizado com sucesso`);
+        
+        // Remover dos pendentes
+        delete pendingUpdates[userId];
+      } catch (error) {
+        console.error(`❌ Erro ao sincronizar perfil ${userId}:`, error);
+      }
+    }
+    
+    // Atualizar lista de pendentes
+    if (Object.keys(pendingUpdates).length > 0) {
+      localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
+    } else {
+      localStorage.removeItem('pending_profile_updates');
+    }
+    
+    // Avisar aplicação que dados foram sincronizados
+    window.dispatchEvent(new Event('profile-sync-completed'));
+    
+    return true;
+  } catch (error) {
+    console.error('❌ Erro ao sincronizar perfis:', error);
+    return false;
+  }
+};
+
+// Configurar sincronização automática quando ficar online
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('🌐 Conexão restaurada, sincronizando alterações pendentes...');
+    syncPendingProfileUpdates();
+  });
 }

@@ -63,10 +63,21 @@ export default function Register() {
     }
     
     // Verificar campos obrigatórios
-    if (!formData.email || !formData.password || !formData.firstName) {
+    if (!formData.email || !formData.password || !formData.firstName || !formData.phoneNumber) {
       toast({
         title: "Campos obrigatórios",
         description: "Preencha todos os campos marcados com *",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Validar formato do telefone
+    const phoneRegex = /^\(\d{2}\)\s\d{5}-\d{4}$|^\d{10,11}$/;
+    if (!phoneRegex.test(formData.phoneNumber)) {
+      toast({
+        title: "Formato de telefone inválido",
+        description: "Digite um telefone no formato (99) 99999-9999 ou apenas os números",
         variant: "destructive"
       });
       return;
@@ -182,7 +193,27 @@ export default function Register() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    
+    if (name === 'phoneNumber') {
+      // Remove todos os caracteres não numéricos
+      let numericValue = value.replace(/\D/g, '');
+      
+      // Limita a 11 dígitos
+      numericValue = numericValue.slice(0, 11);
+      
+      // Formata o número conforme digita
+      let formattedValue = numericValue;
+      if (numericValue.length > 2) {
+        formattedValue = `(${numericValue.slice(0, 2)}) ${numericValue.slice(2)}`;
+      }
+      if (numericValue.length > 7) {
+        formattedValue = `(${numericValue.slice(0, 2)}) ${numericValue.slice(2, 7)}-${numericValue.slice(7)}`;
+      }
+      
+      setFormData(prev => ({ ...prev, [name]: formattedValue }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   return (
@@ -241,7 +272,7 @@ export default function Register() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="phoneNumber">Telefone (opcional)</Label>
+                  <Label htmlFor="phoneNumber">Telefone *</Label>
                   <Input
                     id="phoneNumber"
                     name="phoneNumber"
@@ -251,6 +282,7 @@ export default function Register() {
                     value={formData.phoneNumber}
                     onChange={handleChange}
                     disabled={loading}
+                    required
                   />
                 </div>
                 

@@ -1,5 +1,5 @@
 import { getScriptureByTheme, generateThemeMessage } from './bibleService';
-import { supabase } from '@/lib/supabase';
+import { supabase, checkSupabaseConnectivity } from '@/lib/supabase';
 import { toast } from '@/hooks/use-toast';
 import { format, addDays, isToday } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -564,7 +564,7 @@ export const checkAndPublishDailyDevotional = async (): Promise<Devotional | nul
 };
 
 /**
- * Função para criar um novo devocional, com formato simplificado
+ * Função para criar um novo devocional, com suporte para modo offline
  */
 export const createDevotional = async (devotional: Partial<Devotional>): Promise<string | null> => {
   try {
@@ -594,6 +594,7 @@ export const createDevotional = async (devotional: Partial<Devotional>): Promise
     }
 
     // Mapear os dados para o formato correto da tabela
+    // Não incluir o ID, deixar o Supabase gerar automaticamente
     const devotionalData = {
       title: devotional.title.trim(),
       content: (devotional.content || '').trim() || 'Sem conteúdo',
@@ -602,39 +603,149 @@ export const createDevotional = async (devotional: Partial<Devotional>): Promise
       date: devotional.date || new Date().toISOString().split('T')[0],
       theme: (devotional.theme || 'reflexão').trim(),
       is_generated: false,
-      references: [],
-      image_url: '',
-      transmission_link: '',
+      references: devotional.references || [],
+      image_url: devotional.imageSrc || '',
+      transmission_link: devotional.transmissionLink || '',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
     console.log('Dados do devocional mapeados:', devotionalData);
 
-    // Tentar inserir diretamente na tabela
-    console.log('Inserindo devocional na tabela...');
-    const { data: insertData, error: insertError } = await supabase
-      .from('devotionals')
-      .insert(devotionalData)
-      .select()
-      .single();
-
-    if (insertError) {
-      console.error('Erro ao inserir devocional:', insertError);
-      throw new Error('Não foi possível salvar o devocional: ' + insertError.message);
+    // Verificar conectividade com o Supabase antes de tentar criar o devocional
+    const isSupabaseAvailable = await checkSupabaseConnectivity();
+    
+    if (!isSupabaseAvailable) {
+      console.warn("⚠️ Supabase não está acessível. Salvando devocional localmente.");
+      // Salvar devocional pendente no localStorage
+      try {
+        // Gerar um ID temporário para uso offline apenas
+        const offlineId = `offline_${Date.now().toString(36)}${Math.random().toString(36).substring(2)}`;
+        
+        // Obter devocionais pendentes ou inicializar array vazio
+        const pendingDevotionals = JSON.parse(localStorage.getItem('pending_devotionals') || '[]');
+        
+        // Adicionar novo devocional à lista de pendentes
+        pendingDevotionals.push({
+          ...devotionalData,
+          id: offlineId, // ID temporário apenas para armazenamento local
+          author: user.first_name || user.username || user.email,
+          authorId: user.id,
+          pendingCreation: true,
+          pendingTimestamp: Date.now()
+        });
+        
+        // Salvar de volta no localStorage
+        localStorage.setItem('pending_devotionals', JSON.stringify(pendingDevotionals));
+        
+        // Notificar usuário
+        toast({
+          title: "Devocional salvo localmente",
+          description: "O devocional foi salvo no seu dispositivo e será sincronizado quando houver conexão"
+        });
+        
+        return offlineId;
+      } catch (localError) {
+        console.error('❌ Erro ao salvar devocional localmente:', localError);
+        throw new Error('Não foi possível salvar o devocional localmente: ' + (localError.message || 'Erro desconhecido'));
+      }
     }
 
-    if (!insertData) {
-      throw new Error('Erro interno ao criar devocional');
+    // Se chegou aqui, temos conectividade, então vamos tentar criar o devocional no servidor
+    try {
+      // Tentar inserir diretamente na tabela
+      console.log('Inserindo devocional na tabela...');
+      const { data: insertData, error: insertError } = await supabase
+        .from('devotionals')
+        .insert(devotionalData)
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('Erro ao inserir devocional:', insertError);
+        
+        // Se o erro for de conectividade, salvar localmente
+        if (insertError.message && (
+            insertError.message.includes('Failed to fetch') ||
+            insertError.message.includes('ERR_NAME_NOT_RESOLVED') ||
+            insertError.message.includes('NetworkError')
+        )) {
+          console.warn("⚠️ Erro de conectividade detectado, salvando localmente");
+          
+          // Gerar um ID temporário para uso offline apenas
+          const offlineId = `offline_${Date.now().toString(36)}${Math.random().toString(36).substring(2)}`;
+          
+          // Salvar devocional pendente no localStorage
+          const pendingDevotionals = JSON.parse(localStorage.getItem('pending_devotionals') || '[]');
+          pendingDevotionals.push({
+            ...devotionalData,
+            id: offlineId, // ID temporário apenas para armazenamento local
+            author: user.first_name || user.username || user.email,
+            authorId: user.id,
+            pendingCreation: true,
+            pendingTimestamp: Date.now()
+          });
+          localStorage.setItem('pending_devotionals', JSON.stringify(pendingDevotionals));
+          
+          toast({
+            title: "Devocional salvo localmente",
+            description: "O devocional foi salvo no seu dispositivo e será sincronizado quando houver conexão"
+          });
+          
+          return offlineId;
+        }
+        
+        throw new Error('Não foi possível salvar o devocional: ' + insertError.message);
+      }
+
+      if (!insertData) {
+        throw new Error('Erro interno ao criar devocional');
+      }
+
+      console.log('Devocional criado com sucesso:', insertData);
+      toast({
+        title: "Devocional criado",
+        description: "O devocional foi criado com sucesso"
+      });
+
+      return insertData.id;
+    } catch (dbError) {
+      console.error('Erro ao acessar banco de dados:', dbError);
+      
+      // Se for um erro de rede/conectividade, salvar localmente
+      if (dbError?.message && (
+          dbError.message.includes('Failed to fetch') ||
+          dbError.message.includes('ERR_NAME_NOT_RESOLVED') ||
+          dbError.message.includes('NetworkError') ||
+          dbError.message.includes('network')
+      )) {
+        console.warn("⚠️ Problema de conectividade ao salvar no banco, salvando localmente");
+        
+        // Gerar um ID temporário para uso offline apenas
+        const offlineId = `offline_${Date.now().toString(36)}${Math.random().toString(36).substring(2)}`;
+        
+        // Salvar devocional pendente no localStorage
+        const pendingDevotionals = JSON.parse(localStorage.getItem('pending_devotionals') || '[]');
+        pendingDevotionals.push({
+          ...devotionalData,
+          id: offlineId, // ID temporário apenas para armazenamento local
+          author: user.first_name || user.username || user.email,
+          authorId: user.id,
+          pendingCreation: true,
+          pendingTimestamp: Date.now()
+        });
+        localStorage.setItem('pending_devotionals', JSON.stringify(pendingDevotionals));
+        
+        toast({
+          title: "Devocional salvo localmente",
+          description: "O devocional foi salvo no seu dispositivo e será sincronizado quando houver conexão"
+        });
+        
+        return offlineId;
+      }
+      
+      throw dbError;
     }
-
-    console.log('Devocional criado com sucesso:', insertData);
-    toast({
-      title: "Devocional criado",
-      description: "O devocional foi criado com sucesso"
-    });
-
-    return insertData.id;
   } catch (error) {
     console.error('Erro ao criar devocional:', error);
     throw error;
@@ -788,5 +899,114 @@ export const testInsertDevotional = async (): Promise<{success: boolean, message
       success: false,
       message: `Erro ao testar inserção: ${e.message}`
     };
+  }
+};
+
+/**
+ * Sincroniza devocionais pendentes quando o usuário ficar online
+ */
+export const syncPendingDevotionals = async (): Promise<boolean> => {
+  try {
+    // Verificar se há conexão
+    if (!window.navigator.onLine) {
+      console.log("🔄 Tentativa de sincronização de devocionais ignorada: usuário offline");
+      return false;
+    }
+    
+    // Verificar se o serviço Supabase está disponível
+    const isSupabaseAvailable = await checkSupabaseConnectivity();
+    if (!isSupabaseAvailable) {
+      console.log("🔄 Serviço Supabase indisponível, adiando sincronização de devocionais");
+      return false;
+    }
+    
+    // Verificar se há devocionais pendentes
+    const pendingDevotionalsStr = localStorage.getItem('pending_devotionals');
+    if (!pendingDevotionalsStr) return false;
+    
+    const pendingDevotionals = JSON.parse(pendingDevotionalsStr);
+    if (pendingDevotionals.length === 0) {
+      localStorage.removeItem('pending_devotionals');
+      return false;
+    }
+    
+    console.log(`🔄 Sincronizando ${pendingDevotionals.length} devocionais pendentes...`);
+    
+    let successCount = 0;
+    const failedDevotionals = [];
+    
+    // Processar cada devocional pendente
+    for (const devotionalData of pendingDevotionals) {
+      try {
+        // Remover campos que não fazem parte da tabela
+        const { pendingCreation, pendingTimestamp, author, authorId, ...dataToSave } = devotionalData;
+        
+        // Aplicar no servidor
+        const { data, error } = await supabase
+          .from('devotionals')
+          .insert(dataToSave)
+          .select()
+          .single();
+          
+        if (error) {
+          console.error(`❌ Falha ao sincronizar devocional ${devotionalData.id}:`, error.message);
+          failedDevotionals.push(devotionalData);
+          continue;
+        }
+        
+        console.log(`✅ Devocional ${data.id} sincronizado com sucesso`);
+        successCount++;
+      } catch (error) {
+        console.error(`❌ Erro ao sincronizar devocional ${devotionalData.id}:`, error);
+        failedDevotionals.push(devotionalData);
+      }
+    }
+    
+    // Atualizar lista de pendentes com apenas os que falharam
+    if (failedDevotionals.length > 0) {
+      localStorage.setItem('pending_devotionals', JSON.stringify(failedDevotionals));
+    } else {
+      localStorage.removeItem('pending_devotionals');
+    }
+    
+    // Notificar o usuário sobre a sincronização
+    if (successCount > 0) {
+      toast({
+        title: "Devocionais sincronizados",
+        description: `${successCount} devocionais foram sincronizados com sucesso`
+      });
+      
+      // Avisar aplicação que dados foram sincronizados
+      window.dispatchEvent(new Event('devotionals-sync-completed'));
+    }
+    
+    return successCount > 0;
+  } catch (error) {
+    console.error('❌ Erro ao sincronizar devocionais:', error);
+    return false;
+  }
+};
+
+// Configurar sincronização automática quando ficar online
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    console.log('🌐 Conexão restaurada, sincronizando devocionais pendentes...');
+    syncPendingDevotionals();
+  });
+}
+
+/**
+ * Obtém devocionais pendentes de sincronização
+ */
+export const getPendingDevotionals = (): Devotional[] => {
+  try {
+    const pendingDevotionalsStr = localStorage.getItem('pending_devotionals');
+    if (!pendingDevotionalsStr) return [];
+    
+    const pendingDevotionals = JSON.parse(pendingDevotionalsStr);
+    return pendingDevotionals;
+  } catch (error) {
+    console.error('Erro ao buscar devocionais pendentes:', error);
+    return [];
   }
 }; 
