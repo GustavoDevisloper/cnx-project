@@ -774,6 +774,36 @@ export async function getUserById(userId: string): Promise<User | null> {
 }
 
 /**
+ * Verificar se uma string é uma imagem base64
+ */
+const isBase64Image = (str: string): boolean => {
+  return typeof str === 'string' && str.startsWith('data:image/');
+};
+
+/**
+ * Armazenar uma imagem base64 no localStorage e retornar uma referência
+ */
+const storeBase64ImageLocally = (userId: string, base64Image: string): string => {
+  const imageKey = `avatar_${userId}_${Date.now()}`;
+  
+  // Salvar em localStorage
+  localStorage.setItem(imageKey, base64Image);
+  
+  // Retornar referência local
+  return `local://${imageKey}`;
+};
+
+/**
+ * Obter uma imagem base64 do localStorage usando a referência
+ */
+export const getLocalImage = (localRef: string): string | null => {
+  if (!localRef.startsWith('local://')) return null;
+  
+  const imageKey = localRef.replace('local://', '');
+  return localStorage.getItem(imageKey);
+};
+
+/**
  * Atualizar perfil do usuário
  * Versão melhorada que lida com problemas de conectividade e atualiza localmente se necessário
  */
@@ -782,7 +812,38 @@ export async function updateUserProfile(
   userData: Partial<User> & { displayName?: string, avatarUrl?: string, username?: string }
 ): Promise<User | null> {
   try {
-    console.log("🔄 Atualizando perfil do usuário:", userId);
+    console.log('🔄 Atualizando perfil do usuário:', userId);
+    
+    // Mapear os campos personalizados para os campos da tabela
+    const updateData: Partial<User> = { ...userData };
+    
+    // Mapeamento de campos personalizados
+    if (userData.displayName !== undefined) {
+      updateData.display_name = userData.displayName;
+      delete updateData.displayName;
+    }
+    
+    if (userData.username !== undefined) {
+      updateData.username = userData.username;
+      delete updateData.username;
+    }
+    
+    // Verificar se temos uma imagem base64
+    if (userData.avatarUrl !== undefined) {
+      if (isBase64Image(userData.avatarUrl)) {
+        console.log('📷 Detectada imagem em base64, salvando localmente...');
+        
+        // Salvar a imagem base64 localmente e substituir por referência
+        const localRef = storeBase64ImageLocally(userId, userData.avatarUrl);
+        
+        // Usar a referência local em vez da imagem base64 completa
+        updateData.avatar_url = localRef;
+      } else {
+        updateData.avatar_url = userData.avatarUrl;
+      }
+      
+      delete updateData.avatarUrl;
+    }
     
     // Verificar conectividade
     const isSupabaseAvailable = await checkSupabaseConnectivity();
@@ -836,21 +897,10 @@ export async function updateUserProfile(
       return null;
     }
     
-    // Preparar dados para atualização
-    const dataToUpdate: Record<string, any> = {};
-    
-    // Mapear campos usando aliases para nomes corretos da tabela
-    if (userData.first_name !== undefined) dataToUpdate.first_name = userData.first_name;
-    if (userData.displayName !== undefined) dataToUpdate.display_name = userData.displayName;
-    if (userData.username !== undefined) dataToUpdate.username = userData.username;
-    if (userData.phone_number !== undefined) dataToUpdate.phone_number = userData.phone_number;
-    if (userData.bio !== undefined) dataToUpdate.bio = userData.bio;
-    if (userData.avatarUrl !== undefined) dataToUpdate.avatar_url = userData.avatarUrl;
-    
     // Atualizar perfil na tabela users do Supabase
     const { data, error } = await supabase
       .from('users')
-      .update(dataToUpdate)
+      .update(updateData)
       .eq('id', userId)
       .select()
       .single();

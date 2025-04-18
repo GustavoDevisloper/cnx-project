@@ -7,13 +7,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from '@/hooks/use-toast';
-import { User as UserIcon, Edit, Save, Calendar, MessageSquare, Upload, Link as LinkIcon, Camera, Check, X, PencilLine, Info, Image, RefreshCw } from 'lucide-react';
+import { User as UserIcon, Edit, Save, Calendar, MessageSquare, Upload, Link as LinkIcon, Camera, Check, X, PencilLine, Info, Image, RefreshCw, AlertTriangle } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/services/supabaseClient';
 import { useAuth } from '@/hooks/auth';
 import useDebounce from '@/hooks/useDebounce';
+import { uploadImage, getAvailableBucket, fileToBase64 } from '@/services/storageService';
 
 interface ExtendedUser extends User {
   displayName?: string;
@@ -25,7 +26,7 @@ interface ExtendedUser extends User {
 }
 
 // We'll try multiple bucket names - many Supabase projects start with 'public' bucket
-const POTENTIAL_BUCKETS = ['public', 'avatars', 'profiles', 'users'];
+const POTENTIAL_BUCKETS = ['profile', 'avatars', 'profiles', 'users', 'public'];
 
 const Profile = () => {
   const { userId } = useParams<{ userId: string }>();
@@ -41,6 +42,7 @@ const Profile = () => {
   const [shouldShowAvatar, setShouldShowAvatar] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [storageBucket, setStorageBucket] = useState<string | null>(null);
+  const [showUploadDisabledMessage, setShowUploadDisabledMessage] = useState(true);
   
   const [formData, setFormData] = useState({
     displayName: '',
@@ -52,43 +54,20 @@ const Profile = () => {
   const { checkAuth } = useAuth();
   const debouncedFormData = useDebounce(formData, 2000);
 
-  // Check what buckets exist in the Supabase project
   useEffect(() => {
-    const checkAvailableBuckets = async () => {
-      try {
-        console.log("Checking available Supabase storage buckets...");
-        const { data: buckets, error } = await supabase.storage.listBuckets();
-        
-        if (error) {
-          console.error("Error listing buckets:", error);
-          return;
-        }
-        
-        if (buckets && buckets.length > 0) {
-          console.log("Available buckets:", buckets.map(b => b.name).join(', '));
-          
-          // Try to find one of our potential buckets
-          for (const potentialBucket of POTENTIAL_BUCKETS) {
-            if (buckets.some(b => b.name === potentialBucket)) {
-              console.log(`Using existing bucket: ${potentialBucket}`);
-              setStorageBucket(potentialBucket);
-              return;
-            }
-          }
-          
-          // If none of our preferred buckets exist, use the first available one
-          console.log(`Using first available bucket: ${buckets[0].name}`);
-          setStorageBucket(buckets[0].name);
-        } else {
-          console.warn("No storage buckets found in Supabase project");
-        }
-      } catch (err) {
-        console.error("Error checking buckets:", err);
-      }
-    };
+    console.log("Upload de imagens desativado - usando apenas URLs externas");
+    setStorageBucket(null);
     
-    checkAvailableBuckets();
-  }, []);
+    if (showUploadDisabledMessage) {
+      toast({
+        title: 'Apenas URLs externas',
+        description: 'O upload de imagens está desativado. Use uma URL de imagem existente.',
+        variant: 'info',
+        duration: 5000
+      });
+      setShowUploadDisabledMessage(false);
+    }
+  }, [showUploadDisabledMessage]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -265,100 +244,40 @@ const Profile = () => {
     }
   };
 
-  // New function for image upload
+  // Nova implementação do handleUploadImage utilizando o serviço de armazenamento
   const handleUploadImage = async () => {
     if (!selectedFile || !user) return;
-    
-    // Validate file type
-    const fileExt = selectedFile.name.split('.').pop();
-    const allowedTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    
-    if (!fileExt || !allowedTypes.includes(fileExt.toLowerCase())) {
-      toast({
-        title: 'Tipo de arquivo não permitido',
-        description: 'Use JPG, PNG, GIF ou WebP.',
-        variant: 'destructive'
-      });
-      return;
-    }
-    
-    // Validate file size (max 2MB)
-    if (selectedFile.size > 2 * 1024 * 1024) {
-      toast({
-        title: 'Arquivo muito grande',
-        description: 'O tamanho máximo é 2MB.',
-        variant: 'destructive'
-      });
-      return;
-    }
-    
-    // Check if we have a valid bucket to use
-    if (!storageBucket) {
-      toast({
-        title: 'Erro de armazenamento',
-        description: 'Nenhum bucket de armazenamento disponível. Entre em contato com o administrador.',
-        variant: 'destructive'
-      });
-      return;
-    }
     
     setIsUploading(true);
     
     try {
-      // Generate a unique filename
-      const timestamp = new Date().getTime();
-      const filePath = `${user.id}/${timestamp}.${fileExt}`;
+      // Usar abordagem com base64 redimensionado já que o Storage está com problemas de permissão
+      console.log('Usando abordagem alternativa com base64 redimensionado');
       
-      console.log(`Uploading to bucket: ${storageBucket}, path: ${filePath}`);
-      
-      // Upload to Supabase Storage
-      const { data, error } = await supabase.storage
-        .from(storageBucket)
-        .upload(filePath, selectedFile, {
-          cacheControl: '3600',
-          upsert: true, // Set to true to overwrite existing files
-        });
-      
-      if (error) {
-        console.error('Storage upload error:', error);
-        
-        // Provide more specific error messages based on error code
-        if (error.message?.includes('bucket not found')) {
-          throw new Error(`O bucket de armazenamento "${storageBucket}" não existe. Entre em contato com o administrador.`);
-        }
-        
-        if (error.statusCode === '403') {
-          throw new Error(`Permissão negada ao fazer upload. Verifique se você está logado corretamente.`);
-        }
-        
-        throw error;
+      // Otimização: Verificar o tamanho do arquivo antes de processá-lo
+      if (selectedFile.size > 5 * 1024 * 1024) { // 5MB
+        throw new Error('A imagem é muito grande. Por favor, escolha uma imagem menor que 5MB.');
       }
       
-      if (!data) {
-        throw new Error('Upload falhou, nenhum dado retornado');
-      }
-      
-      // Get the public URL
-      const { data: urlData } = supabase.storage
-        .from(storageBucket)
-        .getPublicUrl(filePath);
-      
-      if (!urlData?.publicUrl) {
-        throw new Error('Falha ao obter URL pública para imagem carregada');
-      }
-      
-      // Update user profile with new avatar URL
-      const avatarUrl = urlData.publicUrl;
-      
-      // Forçar o recarregamento da imagem removendo-a temporariamente
-      setShouldShowAvatar(false);
-      
-      setFormData((prev) => ({ ...prev, avatarUrl }));
-      
-      // Save to database
-      const updateData = { avatar_url: avatarUrl };
-      
+      // Usar fileToBase64 do serviço de armazenamento para redimensionar a imagem
       try {
+        // Importamos a função do storageService
+        const avatarUrl = await fileToBase64(selectedFile, 100, 100, 0.3);
+        
+        if (!avatarUrl) {
+          throw new Error('Não foi possível processar a imagem');
+        }
+        
+        console.log(`Tamanho da string base64: ${avatarUrl.length} caracteres`);
+        
+        // Forçar o recarregamento da imagem removendo-a temporariamente
+        setShouldShowAvatar(false);
+        
+        setFormData((prev) => ({ ...prev, avatarUrl }));
+        
+        // Salvar no perfil do usuário
+        const updateData = { avatar_url: avatarUrl };
+        
         const updatedUser = await updateUserProfile(
           user.id,
           {
@@ -397,106 +316,25 @@ const Profile = () => {
               }
             }));
             
-            console.log('Avatar atualizado para:', avatarUrl);
+            console.log('Avatar atualizado com base64 de tamanho reduzido');
             
-            // Continuar tentando usar o sistema de toast normal
             toast({
               title: 'Foto de perfil atualizada',
-              description: 'Sua foto foi atualizada com sucesso. Para visualizar em todos os lugares, pode ser necessário recarregar a página.',
-              duration: 8000,
+              description: 'Sua foto foi atualizada com sucesso!',
+              duration: 5000,
+              variant: 'success'
             });
-            
-            // Criar um container para a notificação personalizada
-            const notificationContainer = document.createElement('div');
-            notificationContainer.className = 'fixed top-4 right-4 z-50 flex flex-col gap-2 items-end max-w-sm';
-            notificationContainer.id = 'profile-notification-container';
-            
-            // Criar a notificação
-            const notification = document.createElement('div');
-            notification.className = 'bg-background border border-border shadow-lg rounded-lg p-4 animate-in slide-in-from-right';
-            notification.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
-            
-            // Título da notificação
-            const title = document.createElement('div');
-            title.className = 'font-medium text-foreground flex items-center gap-2 mb-1';
-            title.innerHTML = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.49991 0.876892C3.84222 0.876892 0.877075 3.84204 0.877075 7.49972C0.877075 11.1574 3.84222 14.1226 7.49991 14.1226C11.1576 14.1226 14.1227 11.1574 14.1227 7.49972C14.1227 3.84204 11.1576 0.876892 7.49991 0.876892ZM1.82707 7.49972C1.82707 4.36671 4.36689 1.82689 7.49991 1.82689C10.6329 1.82689 13.1727 4.36671 13.1727 7.49972C13.1727 10.6327 10.6329 13.1726 7.49991 13.1726C4.36689 13.1726 1.82707 10.6327 1.82707 7.49972ZM7.50003 4C7.77617 4 8.00003 4.22386 8.00003 4.5V8.5C8.00003 8.77614 7.77617 9 7.50003 9C7.22389 9 7.00003 8.77614 7.00003 8.5V4.5C7.00003 4.22386 7.22389 4 7.50003 4ZM7.5 10C7.22386 10 7 10.2239 7 10.5C7 10.7761 7.22386 11 7.5 11C7.77614 11 8 10.7761 8 10.5C8 10.2239 7.77614 10 7.5 10Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path></svg>Foto de perfil atualizada';
-            
-            // Conteúdo da notificação
-            const content = document.createElement('div');
-            content.className = 'text-sm text-muted-foreground';
-            content.textContent = 'Sua foto foi atualizada com sucesso. Para visualizar em todos os lugares, pode ser necessário recarregar a página.';
-            
-            // Adicionar título e conteúdo à notificação
-            notification.appendChild(title);
-            notification.appendChild(content);
-            
-            // Adicionar notificação ao container
-            notificationContainer.appendChild(notification);
-            
-            // Adicionar container ao body
-            document.body.appendChild(notificationContainer);
-            
-            // Adicionar um botão de recarregamento
-            const reloadButton = document.createElement('button');
-            reloadButton.innerText = 'Recarregar página';
-            reloadButton.className = 'bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-md flex items-center gap-2 animate-in slide-in-from-right';
-            reloadButton.style.animationDelay = '150ms';
-            reloadButton.onclick = () => window.location.reload();
-            
-            // Adicionar ícone de refresh
-            const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-            iconSvg.setAttribute('viewBox', '0 0 24 24');
-            iconSvg.setAttribute('width', '16');
-            iconSvg.setAttribute('height', '16');
-            iconSvg.setAttribute('fill', 'none');
-            iconSvg.setAttribute('stroke', 'currentColor');
-            iconSvg.setAttribute('stroke-width', '2');
-            iconSvg.setAttribute('stroke-linecap', 'round');
-            iconSvg.setAttribute('stroke-linejoin', 'round');
-            
-            const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-            path.setAttribute('d', 'M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15');
-            
-            iconSvg.appendChild(path);
-            reloadButton.prepend(iconSvg);
-            
-            // Adicionar botão ao container de notificação
-            notificationContainer.appendChild(reloadButton);
-            
-            // Remover a notificação após 10 segundos
-            setTimeout(() => {
-              if (document.body.contains(notificationContainer)) {
-                // Adicionar classe de fade-out
-                notification.style.opacity = '0';
-                notification.style.transform = 'translateX(10px)';
-                notification.style.transition = 'opacity 0.5s, transform 0.5s';
-                reloadButton.style.opacity = '0';
-                reloadButton.style.transform = 'translateX(10px)';
-                reloadButton.style.transition = 'opacity 0.5s, transform 0.5s';
-                
-                // Remover após a animação
-                setTimeout(() => {
-                  if (document.body.contains(notificationContainer)) {
-                    document.body.removeChild(notificationContainer);
-                  }
-                }, 500);
-              }
-            }, 10000);
           }, 100);
         }
-      } catch (dbError: any) {
-        console.error('Error updating user profile in database:', dbError);
-        
-        // If database update fails, try to delete the uploaded file to avoid orphaned files
-        await supabase.storage.from(storageBucket).remove([filePath]);
-        
-        throw new Error(`Falha ao atualizar perfil: ${dbError.message || 'Erro no banco de dados'}`);
+      } catch (resizeError) {
+        console.error('Erro ao redimensionar imagem:', resizeError);
+        throw new Error('Não foi possível processar a imagem. Por favor, tente novamente com uma imagem menor.');
       }
     } catch (error: any) {
       console.error('Error uploading image:', error);
       toast({
-        title: 'Erro ao fazer upload da imagem',
-        description: error.message || 'Ocorreu um erro ao fazer upload da imagem.',
+        title: 'Erro ao processar a imagem',
+        description: error.message || 'Ocorreu um erro ao processar a imagem. Tente usar a opção de URL externa.',
         variant: 'destructive'
       });
       
@@ -509,6 +347,12 @@ const Profile = () => {
 
   // Função para forçar o recarregamento da imagem
   const forceImageReload = (url: string) => {
+    // Não adicione parâmetros em URLs base64, pois isso causa o erro ERR_INVALID_URL
+    if (url && typeof url === 'string' && url.startsWith('data:')) {
+      return url; // Retorna a URL base64 sem modificação
+    }
+    
+    // Para URLs HTTP normais, adicione cache-busting
     // Adicionar um parâmetro de cache-busting se não existir ou atualizar o existente
     const baseUrl = url.split('?')[0];
     return `${baseUrl}?t=${Date.now()}`;
@@ -533,6 +377,96 @@ const Profile = () => {
         avatarUrl: user.avatarUrl || '',
         username: user.username || ''
       });
+    }
+  };
+
+  // New function for using external image URLs
+  const handleUseExternalImage = async () => {
+    if (!user || !formData.avatarUrl) return;
+    
+    setIsUploading(true);
+    
+    try {
+      // Validar se a URL é acessível
+      try {
+        const response = await fetch(formData.avatarUrl, { method: 'HEAD' });
+        if (!response.ok) {
+          throw new Error('URL inacessível');
+        }
+      } catch (urlError) {
+        toast({
+          title: 'URL inválida',
+          description: 'Não foi possível acessar a URL da imagem. Verifique se o link está correto e acessível.',
+          variant: 'destructive'
+        });
+        setIsUploading(false);
+        return;
+      }
+      
+      // Update user profile with new avatar URL
+      const avatarUrl = formData.avatarUrl;
+      
+      // Forçar o recarregamento da imagem removendo-a temporariamente
+      setShouldShowAvatar(false);
+      
+      // Save to database
+      const updatedUser = await updateUserProfile(
+        user.id,
+        {
+          avatarUrl: avatarUrl,
+        }
+      );
+      
+      if (updatedUser) {
+        // Atualizar o key da imagem para forçar o recarregamento
+        setAvatarKey(Date.now());
+        
+        // Fechar o diálogo após sucesso
+        document.querySelector('.dialog-close')?.dispatchEvent(new MouseEvent('click'));
+        
+        // Atualiza o usuário local
+        setUser(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            avatar_url: avatarUrl,
+            avatarUrl: avatarUrl
+          };
+        });
+        
+        // Pequeno atraso para garantir que o componente seja remontado
+        setTimeout(() => {
+          // Mostrar a imagem novamente
+          setShouldShowAvatar(true);
+          
+          // Disparar evento personalizado para notificar outros componentes sobre a mudança de avatar
+          window.dispatchEvent(new CustomEvent('user-avatar-changed', { 
+            detail: { 
+              userId: user.id, 
+              avatarUrl,
+              timestamp: Date.now() 
+            }
+          }));
+          
+          console.log('Avatar atualizado para:', avatarUrl);
+          
+          toast({
+            title: 'Foto de perfil atualizada',
+            description: 'Sua foto foi atualizada com sucesso usando URL externa.',
+            duration: 5000,
+            variant: 'success'
+          });
+        }, 100);
+      }
+    } catch (error: any) {
+      console.error('Erro ao atualizar imagem de perfil:', error);
+      toast({
+        title: 'Erro ao atualizar imagem',
+        description: error.message || 'Ocorreu um erro ao atualizar sua foto de perfil.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -576,10 +510,11 @@ const Profile = () => {
                 <Avatar className="w-32 h-32 border-2 border-primary/20">
                   {user.avatarUrl && shouldShowAvatar ? (
                     <AvatarImage 
-                      src={forceImageReload(user.avatarUrl)} 
+                      src={user.avatarUrl} 
                       alt={user.displayName || 'User'} 
+                      key={avatarKey}
                       onError={() => {
-                        console.log('Erro ao carregar imagem de perfil, tentando novamente...');
+                        console.log('Erro ao carregar imagem de perfil');
                         setAvatarKey(Date.now());
                       }}
                     />
@@ -612,27 +547,27 @@ const Profile = () => {
                   </AlertDialogHeader>
                   
                   <div className="flex gap-2 mb-4">
-                      <Button 
-                        variant={avatarMode === 'link' ? 'default' : 'outline'} 
-                        size="sm"
-                        onClick={() => setAvatarMode('link')}
-                        className="flex-1"
-                      >
+                    <Button 
+                      variant={avatarMode === 'link' ? 'default' : 'outline'} 
+                      size="sm"
+                      onClick={() => setAvatarMode('link')}
+                      className="flex-1"
+                    >
                       <LinkIcon className="h-4 w-4 mr-2" />
-                        Usar link
-                      </Button>
-                      <Button 
-                        variant={avatarMode === 'upload' ? 'default' : 'outline'} 
-                        size="sm"
-                        onClick={() => setAvatarMode('upload')}
-                        className="flex-1"
-                      >
+                      Usar link
+                    </Button>
+                    <Button 
+                      variant={avatarMode === 'upload' ? 'default' : 'outline'} 
+                      size="sm"
+                      onClick={() => setAvatarMode('upload')}
+                      className="flex-1"
+                    >
                       <Upload className="h-4 w-4 mr-2" />
-                        Fazer upload
-                      </Button>
-                    </div>
-                    
-                    {avatarMode === 'link' ? (
+                      Fazer upload
+                    </Button>
+                  </div>
+                  
+                  {avatarMode === 'link' && (
                     <div className="mb-4 space-y-4">
                       <div>
                         <Label htmlFor="avatarUrl" className="font-medium mb-1.5 block">URL da imagem</Label>
@@ -668,198 +603,94 @@ const Profile = () => {
                           </div>
                         </div>
                       )}
-                    </div>
-                    ) : (
-                    <div className="flex flex-col gap-4 mb-4">
-                        <input 
-                          type="file" 
-                          accept="image/*"
-                          onChange={handleFileChange}
-                          ref={fileInputRef}
-                          className="hidden"
-                          id="avatar-file-input"
-                        />
-                        {!storageBucket ? (
-                          <div className="text-center p-4 bg-red-50 text-red-800 rounded-md">
-                            <Info className="h-5 w-5 mx-auto mb-2" />
-                            <p className="text-sm">Armazenamento não disponível. Contate o administrador.</p>
-                          </div>
-                        ) : (
+                      
+                      <Button 
+                        variant="default"
+                        onClick={handleUseExternalImage}
+                        disabled={isUploading || !formData.avatarUrl}
+                        className="w-full"
+                      >
+                        {isUploading ? (
                           <>
-                            <div>
-                              <Label className="font-medium mb-1.5 block">Selecione uma imagem do seu computador</Label>
-                              <Button 
-                                variant="outline" 
-                                onClick={() => fileInputRef.current?.click()}
-                                disabled={isUploading || !storageBucket}
-                                className="w-full"
-                              >
-                                <Image className="h-4 w-4 mr-2" />
-                                {selectedFile ? 'Alterar imagem' : 'Selecionar imagem'}
-                              </Button>
-                              <p className="text-xs text-muted-foreground mt-1.5">
-                                Formatos permitidos: JPG, PNG, GIF, WebP (máx. 2MB)
-                              </p>
-                            </div>
-                            
-                            {selectedFile && (
-                              <div className="flex flex-col gap-3">
-                                <div className="flex items-center gap-3 p-2 border border-border rounded-md bg-muted/30">
-                                  <div className="relative w-12 h-12 overflow-hidden rounded-md">
-                                    <img 
-                                      src={URL.createObjectURL(selectedFile)} 
-                                      alt="Prévia" 
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0">
-                                    <span className="text-sm font-medium truncate block">
-                                      {selectedFile.name}
-                                    </span>
-                                    <span className="text-xs text-muted-foreground">
-                                      {(selectedFile.size / 1024).toFixed(1)} KB
-                                    </span>
-                                  </div>
-                                </div>
-                                
-                                <Button 
-                                  variant="default"
-                                  onClick={handleUploadImage}
-                                  disabled={isUploading || !storageBucket}
-                                  className="w-full"
-                                >
-                                  {isUploading ? (
-                                    <>
-                                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
-                                      Enviando...
-                                    </>
-                                  ) : 'Enviar imagem'}
-                                </Button>
-                              </div>
-                            )}
+                            <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                            Salvando...
                           </>
-                        )}
+                        ) : 'Usar esta imagem'}
+                      </Button>
                     </div>
-                    )}
+                  )}
+                  
+                  {avatarMode === 'upload' && (
+                    <div className="flex flex-col gap-4 mb-4">
+                      <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={handleFileChange}
+                        ref={fileInputRef}
+                        className="hidden"
+                        id="avatar-file-input"
+                      />
+                      <div>
+                        <Label className="font-medium mb-1.5 block">Selecione uma imagem do seu computador</Label>
+                        <Button 
+                          variant="outline" 
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploading}
+                          className="w-full"
+                        >
+                          <Image className="h-4 w-4 mr-2" />
+                          {selectedFile ? 'Alterar imagem' : 'Selecionar imagem'}
+                        </Button>
+                        <p className="text-xs text-muted-foreground mt-1.5">
+                          Formatos permitidos: JPG, PNG, GIF, WebP (máx. 2MB)
+                        </p>
+                      </div>
+                      
+                      {selectedFile && (
+                        <div className="flex flex-col gap-3">
+                          <div className="flex items-center gap-3 p-2 border border-border rounded-md bg-muted/30">
+                            <div className="relative w-12 h-12 overflow-hidden rounded-md">
+                              <img 
+                                src={URL.createObjectURL(selectedFile)} 
+                                alt="Prévia" 
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <span className="text-sm font-medium truncate block">
+                                {selectedFile.name}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {(selectedFile.size / 1024).toFixed(1)} KB
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <Button 
+                            variant="default"
+                            onClick={handleUploadImage}
+                            disabled={isUploading}
+                            className="w-full"
+                          >
+                            {isUploading ? (
+                              <>
+                                <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></span>
+                                Enviando...
+                              </>
+                            ) : 'Enviar imagem'}
+                          </Button>
+                        </div>
+                      )}
+                      
+                      <div className="bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-300 rounded p-3 text-sm flex items-start">
+                        <Info className="h-4 w-4 mr-2 mt-0.5" />
+                        <span>Se o upload falhar, a imagem será armazenada localmente como alternativa. Você ainda poderá usá-la como sua foto de perfil.</span>
+                      </div>
+                    </div>
+                  )}
                   
                   <AlertDialogFooter className="flex items-center justify-between">
                     <AlertDialogCancel className="dialog-close">Cancelar</AlertDialogCancel>
-                    {avatarMode === 'link' && (
-                      <AlertDialogAction 
-                        onClick={() => {
-                          // Forçar recarregamento removendo temporariamente
-                          setShouldShowAvatar(false);
-                          
-                          handleSaveField('avatarUrl');
-                          // Atualizar o key da imagem para forçar o recarregamento
-                          setAvatarKey(Date.now());
-                          
-                          // Pequeno atraso para garantir que o componente seja remontado
-                          setTimeout(() => {
-                            // Mostrar a imagem novamente
-                            setShouldShowAvatar(true);
-                            
-                            // Disparar evento de mudança de avatar
-                            if (user) {
-                              window.dispatchEvent(new CustomEvent('user-avatar-changed', { 
-                                detail: { 
-                                  userId: user.id, 
-                                  avatarUrl: formData.avatarUrl,
-                                  timestamp: Date.now() 
-                                }
-                              }));
-                              
-                              // Tentar mostrar notificação com o sistema de toast
-                              toast({
-                                title: 'Foto de perfil atualizada',
-                                description: 'Sua foto foi atualizada com sucesso. Para visualizar em todos os lugares, pode ser necessário recarregar a página.',
-                                duration: 8000,
-                              });
-                              
-                              // Criar um container para a notificação personalizada
-                              const notificationContainer = document.createElement('div');
-                              notificationContainer.className = 'fixed top-4 right-4 z-50 flex flex-col gap-2 items-end max-w-sm';
-                              notificationContainer.id = 'profile-notification-container';
-                              
-                              // Criar a notificação
-                              const notification = document.createElement('div');
-                              notification.className = 'bg-background border border-border shadow-lg rounded-lg p-4 animate-in slide-in-from-right';
-                              notification.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)';
-                              
-                              // Título da notificação
-                              const title = document.createElement('div');
-                              title.className = 'font-medium text-foreground flex items-center gap-2 mb-1';
-                              title.innerHTML = '<svg width="15" height="15" viewBox="0 0 15 15" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M7.49991 0.876892C3.84222 0.876892 0.877075 3.84204 0.877075 7.49972C0.877075 11.1574 3.84222 14.1226 7.49991 14.1226C11.1576 14.1226 14.1227 11.1574 14.1227 7.49972C14.1227 3.84204 11.1576 0.876892 7.49991 0.876892ZM1.82707 7.49972C1.82707 4.36671 4.36689 1.82689 7.49991 1.82689C10.6329 1.82689 13.1727 4.36671 13.1727 7.49972C13.1727 10.6327 10.6329 13.1726 7.49991 13.1726C4.36689 13.1726 1.82707 10.6327 1.82707 7.49972ZM7.50003 4C7.77617 4 8.00003 4.22386 8.00003 4.5V8.5C8.00003 8.77614 7.77617 9 7.50003 9C7.22389 9 7.00003 8.77614 7.00003 8.5V4.5C7.00003 4.22386 7.22389 4 7.50003 4ZM7.5 10C7.22386 10 7 10.2239 7 10.5C7 10.7761 7.22386 11 7.5 11C7.77614 11 8 10.7761 8 10.5C8 10.2239 7.77614 10 7.5 10Z" fill="currentColor" fill-rule="evenodd" clip-rule="evenodd"></path></svg>Foto de perfil atualizada';
-                              
-                              // Conteúdo da notificação
-                              const content = document.createElement('div');
-                              content.className = 'text-sm text-muted-foreground';
-                              content.textContent = 'Sua foto foi atualizada com sucesso. Para visualizar em todos os lugares, pode ser necessário recarregar a página.';
-                              
-                              // Adicionar título e conteúdo à notificação
-                              notification.appendChild(title);
-                              notification.appendChild(content);
-                              
-                              // Adicionar notificação ao container
-                              notificationContainer.appendChild(notification);
-                              
-                              // Adicionar container ao body
-                              document.body.appendChild(notificationContainer);
-                              
-                              // Adicionar um botão de recarregamento
-                              const reloadButton = document.createElement('button');
-                              reloadButton.innerText = 'Recarregar página';
-                              reloadButton.className = 'bg-primary text-primary-foreground px-4 py-2 rounded-md shadow-md flex items-center gap-2 animate-in slide-in-from-right';
-                              reloadButton.style.animationDelay = '150ms';
-                              reloadButton.onclick = () => window.location.reload();
-                              
-                              // Adicionar ícone de refresh
-                              const iconSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-                              iconSvg.setAttribute('viewBox', '0 0 24 24');
-                              iconSvg.setAttribute('width', '16');
-                              iconSvg.setAttribute('height', '16');
-                              iconSvg.setAttribute('fill', 'none');
-                              iconSvg.setAttribute('stroke', 'currentColor');
-                              iconSvg.setAttribute('stroke-width', '2');
-                              iconSvg.setAttribute('stroke-linecap', 'round');
-                              iconSvg.setAttribute('stroke-linejoin', 'round');
-                              
-                              const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-                              path.setAttribute('d', 'M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15');
-                              
-                              iconSvg.appendChild(path);
-                              reloadButton.prepend(iconSvg);
-                              
-                              // Adicionar botão ao container de notificação
-                              notificationContainer.appendChild(reloadButton);
-                              
-                              // Remover a notificação após 10 segundos
-                              setTimeout(() => {
-                                if (document.body.contains(notificationContainer)) {
-                                  // Adicionar classe de fade-out
-                                  notification.style.opacity = '0';
-                                  notification.style.transform = 'translateX(10px)';
-                                  notification.style.transition = 'opacity 0.5s, transform 0.5s';
-                                  reloadButton.style.opacity = '0';
-                                  reloadButton.style.transform = 'translateX(10px)';
-                                  reloadButton.style.transition = 'opacity 0.5s, transform 0.5s';
-                                  
-                                  // Remover após a animação
-                                  setTimeout(() => {
-                                    if (document.body.contains(notificationContainer)) {
-                                      document.body.removeChild(notificationContainer);
-                                    }
-                                  }, 500);
-                                }
-                              }, 10000);
-                            }
-                          }, 100);
-                        }}
-                        disabled={!formData.avatarUrl}
-                      >
-                        Salvar
-                      </AlertDialogAction>
-                    )}
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>

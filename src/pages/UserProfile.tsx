@@ -67,6 +67,8 @@ export default function UserProfile() {
           return;
         }
         
+        console.log("Dados brutos do usuário:", userData);
+        
         // Formatar dados do usuário
         const formattedUser: ExtendedUser = {
           ...userData,
@@ -76,10 +78,12 @@ export default function UserProfile() {
           createdAt: userData.created_at || new Date().toISOString(),
           profileViews: userData.profile_views || 0,
           username: userData.username || '',
-          phone: userData.phone || 'Não informado',
+          phone: userData.phone_number || 'Não informado',
           lastLogin: userData.last_login || 'Nunca',
           loginCount: userData.login_count || 0
         };
+        
+        console.log("Dados formatados do usuário:", formattedUser);
         
         setUser(formattedUser);
         document.title = `Perfil de ${formattedUser.displayName || 'Usuário'}`;

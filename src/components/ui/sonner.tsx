@@ -16,6 +16,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       richColors={true}
       duration={5000}
       invert={false}
+      visibleToasts={3}
       toastOptions={{
         classNames: {
           toast:

@@ -238,6 +238,13 @@ const NavbarNew = () => {
   // Função para garantir que a URL da imagem tenha sempre um parâmetro de atualização
   const getAvatarUrl = (url: string | undefined) => {
     if (!url) return '';
+    
+    // Não adicione parâmetros em URLs base64, pois isso causa o erro ERR_INVALID_URL
+    if (url.startsWith('data:')) {
+      return url;
+    }
+    
+    // Para URLs HTTP normais, adicione cache-busting
     const baseUrl = url.split('?')[0];
     return `${baseUrl}?v=${avatarKey}`;
   };
@@ -322,26 +329,22 @@ const NavbarNew = () => {
           {!isAuthPage && (
             authenticated ? (
               <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="flex items-center gap-2 pl-2 pr-3"
-                  >
-                    <Avatar className="h-6 w-6 border border-primary/20">
+                <DropdownMenuTrigger asChild className="cursor-pointer">
+                  <div className="flex items-center gap-2">
+                    <Avatar className="h-8 w-8 cursor-pointer">
                       {currentUser?.avatar_url ? (
                         <AvatarImage 
-                          src={getAvatarUrl(currentUser.avatar_url)}
-                          alt={currentUser.display_name || 'User'}
+                          src={currentUser.avatar_url}
+                          alt={currentUser.display_name || currentUser.email || 'User'}
+                          key={avatarKey}
                         />
                       ) : (
-                        <AvatarFallback className="text-xs">
-                          {getInitials(currentUser?.display_name || currentUser?.username || currentUser?.email || 'U')}
+                        <AvatarFallback>
+                          {getInitials(currentUser?.display_name || currentUser?.email || 'User')}
                         </AvatarFallback>
                       )}
                     </Avatar>
-                    <span>{currentUser?.display_name || currentUser?.username || 'Usuário'}</span>
-                  </Button>
+                  </div>
                 </DropdownMenuTrigger>
                 
                 <DropdownMenuContent align="end">
@@ -350,8 +353,9 @@ const NavbarNew = () => {
                       <Avatar className="h-10 w-10 border border-primary/20">
                         {currentUser?.avatar_url ? (
                           <AvatarImage
-                            src={getAvatarUrl(currentUser.avatar_url)}
+                            src={currentUser.avatar_url}
                             alt={currentUser.display_name || 'User'}
+                            key={avatarKey}
                           />
                         ) : (
                           <AvatarFallback>
@@ -421,8 +425,9 @@ const NavbarNew = () => {
               <Avatar className="h-10 w-10 border border-primary/20">
                 {currentUser?.avatar_url ? (
                   <AvatarImage
-                    src={getAvatarUrl(currentUser.avatar_url)}
+                    src={currentUser.avatar_url}
                     alt={currentUser.display_name || 'User'}
+                    key={avatarKey}
                   />
                 ) : (
                   <AvatarFallback>
