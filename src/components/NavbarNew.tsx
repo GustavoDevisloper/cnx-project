@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { User as UserType } from '@/services/authService';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import NotificationCenter from "@/components/NotificationCenter";
 
 const NavbarNew = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -313,6 +314,9 @@ const NavbarNew = () => {
         </nav>
         
         <div className="flex items-center space-x-4">
+          {/* Adicionar NotificationCenter apenas para usuários autenticados */}
+          {authenticated && <NotificationCenter />}
+          
           <ThemeSwitcher />
           
           {!isAuthPage && (
@@ -326,7 +330,7 @@ const NavbarNew = () => {
                   >
                     <Avatar className="h-6 w-6 border border-primary/20">
                       {currentUser?.avatar_url ? (
-                        <AvatarImage
+                        <AvatarImage 
                           src={getAvatarUrl(currentUser.avatar_url)}
                           alt={currentUser.display_name || 'User'}
                         />
@@ -339,6 +343,7 @@ const NavbarNew = () => {
                     <span>{currentUser?.display_name || currentUser?.username || 'Usuário'}</span>
                   </Button>
                 </DropdownMenuTrigger>
+                
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel className="flex flex-col">
                     <div className="flex items-center gap-3 pb-1.5">
@@ -378,9 +383,9 @@ const NavbarNew = () => {
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : (
-              <Button
+              <Button 
                 variant="outline"
-                size="sm"
+                size="sm" 
                 onClick={handleLogin}
                 className="flex items-center gap-2"
               >

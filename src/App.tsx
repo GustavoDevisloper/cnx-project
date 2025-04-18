@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider as CustomThemeProvider } from "@/contexts/ThemeContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/toaster";
+import { Toaster } from "@/components/ui/sonner";
 import { AuthProvider } from "@/hooks/auth";
 import MainLayout from "@/layouts/MainLayout";
 import Index from "@/pages/Index";
@@ -32,7 +32,10 @@ import FixPolicies from "@/pages/FixPolicies";
 import DevotionalDetail from "@/pages/DevotionalDetail";
 import DevotionalNew from "@/pages/DevotionalNew";
 import { syncPendingProfileUpdates } from "@/services/authService";
-import { syncPendingDevotionals } from "@/services/devotionalService";
+import { syncPendingDevotionals, syncPendingComments } from "@/services/devotionalService";
+import NotificationTest from "@/pages/NotificationTest";
+import EventForm from "@/pages/EventForm";
+import UserProfile from "@/pages/UserProfile";
 
 // Lazy load admin pages para melhorar performance
 const Admin = React.lazy(() => import("@/pages/Admin"));
@@ -59,8 +62,31 @@ function App() {
             console.log("✅ Devocionais pendentes foram sincronizados");
           }
         });
+        
+        // Sincronizar comentários pendentes
+        syncPendingComments().then(updated => {
+          if (updated) {
+            console.log("✅ Comentários pendentes foram sincronizados");
+          }
+        });
       }, 5000); // Atraso de 5 segundos após carregar a aplicação
     }
+    
+    // Configurar listeners para eventos de online para sincronizar dados
+    const handleOnline = () => {
+      console.log("🌐 Conexão restaurada, sincronizando dados pendentes...");
+      
+      // Tentar sincronizar todos os tipos de dados pendentes
+      syncPendingProfileUpdates();
+      syncPendingDevotionals();
+      syncPendingComments();
+    };
+    
+    window.addEventListener('online', handleOnline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
   }, []);
 
   return (
@@ -138,9 +164,14 @@ function App() {
                   <Route path="update-admin" element={<UpdateAdminRole />} />
                   <Route path="db-schema" element={<DBSchemaCheck />} />
                   <Route path="fix-policies" element={<FixPolicies />} />
+                  <Route path="test-notifications" element={<NotificationTest />} />
 
                   {/* Add redirect from devotionals to devotional */}
                   <Route path="devotionals" element={<Navigate to="/devotional" replace />} />
+
+                  <Route path="/admin/events/new" element={<EventForm />} />
+                  <Route path="/admin/events/:eventId" element={<EventForm />} />
+                  <Route path="/admin/users/:userId" element={<UserProfile />} />
 
                   <Route path="*" element={<NotFound />} />
                 </Route>

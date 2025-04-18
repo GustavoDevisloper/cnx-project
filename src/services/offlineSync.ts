@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { checkSupabaseConnectivity } from '@/lib/supabase';
-import { toast } from 'react-hot-toast';
+import { toast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
 
 // Tipos de dados
@@ -43,7 +43,11 @@ export const saveOfflineDevotional = (devotional: Omit<OfflineDevotional, 'id' |
   localStorage.setItem(OFFLINE_DEVOTIONALS_KEY, JSON.stringify(updatedDevotionals));
   
   // Notificar o usuário
-  toast.success('Devocional salvo offline. Será sincronizado quando houver conexão.');
+  toast({
+    title: 'Devocional salvo offline',
+    description: 'Será sincronizado quando houver conexão.',
+    variant: "success"
+  });
   
   return offlineDevotional;
 };
@@ -152,7 +156,12 @@ export const syncAllPendingDevotionals = async (): Promise<{ success: number, fa
   
   // Notificar o usuário que a sincronização começou
   if (pendingDevotionals.length > 0) {
-    toast.loading(`Sincronizando ${pendingDevotionals.length} devocionais...`, { duration: 3000 });
+    toast({
+      title: `Sincronizando ${pendingDevotionals.length} devocionais...`,
+      description: "Por favor, aguarde enquanto sincronizamos seus devocionais",
+      duration: 3000,
+      variant: "info"
+    });
   }
   
   // Sincronizar cada devocional
@@ -168,11 +177,18 @@ export const syncAllPendingDevotionals = async (): Promise<{ success: number, fa
   
   // Notificar o resultado da sincronização
   if (success > 0) {
-    toast.success(`${success} devocionais sincronizados com sucesso`);
+    toast({
+      title: `${success} devocionais sincronizados com sucesso`,
+      variant: "success"
+    });
   }
   
   if (failed > 0) {
-    toast.error(`${failed} devocionais não puderam ser sincronizados`);
+    toast({
+      title: `${failed} devocionais não puderam ser sincronizados`,
+      description: "Verifique sua conexão e tente novamente mais tarde",
+      variant: "destructive"
+    });
   }
   
   return { success, failed };
@@ -188,9 +204,11 @@ export const setupConnectivityListeners = (): void => {
     console.log('🌐 Conexão restabelecida, verificando devocionais pendentes...');
     
     if (hasPendingDevotionals()) {
-      toast('Conexão restabelecida. Tentando sincronizar devocionais pendentes...', {
-        icon: '🔄',
-        duration: 3000
+      toast({
+        title: 'Conexão restabelecida',
+        description: 'Tentando sincronizar devocionais pendentes...',
+        duration: 3000,
+        variant: "info"
       });
       
       // Dar um pequeno delay para garantir que a conexão está estável
@@ -250,7 +268,10 @@ export const saveDevotional = async (devotionalData: Omit<OfflineDevotional, 'id
       return { success: false, data: null, isOffline: false };
     }
     
-    toast.success('Devocional salvo com sucesso!');
+    toast({
+      title: 'Devocional salvo com sucesso!',
+      variant: "success"
+    });
     return { success: true, data, isOffline: false };
     
   } catch (e: any) {

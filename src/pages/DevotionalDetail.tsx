@@ -33,6 +33,7 @@ const DevotionalDetail = () => {
   const [hasLiked, setHasLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(0);
   const [isLikeLoading, setIsLikeLoading] = useState(false);
+  const [likeAnimation, setLikeAnimation] = useState(false);
   const isLoggedIn = isAuthenticated();
 
   useEffect(() => {
@@ -126,7 +127,9 @@ const DevotionalDetail = () => {
 
     if (!id) return;
     
+    setLikeAnimation(true);
     setIsLikeLoading(true);
+    
     try {
       const result = await toggleDevotionalLike(id);
       if (result.success) {
@@ -137,6 +140,9 @@ const DevotionalDetail = () => {
       console.error("Erro ao curtir devocional:", error);
     } finally {
       setIsLikeLoading(false);
+      setTimeout(() => {
+        setLikeAnimation(false);
+      }, 1000);
     }
   };
 
@@ -245,15 +251,32 @@ const DevotionalDetail = () => {
                 <Button 
                   variant="ghost" 
                   size="sm"
-                  className="flex items-center gap-2"
+                  className={`flex items-center gap-2 relative overflow-hidden transition-all ${
+                    likeAnimation ? (hasLiked ? 'animate-like-active' : 'animate-like-inactive') : ''
+                  }`}
                   onClick={handleLike}
                   disabled={isLikeLoading}
                 >
                   <Heart 
                     size={16} 
-                    className={cn(hasLiked && "fill-primary text-primary")} 
+                    className={cn(
+                      "transition-all duration-300",
+                      hasLiked && "fill-primary text-primary",
+                      likeAnimation && hasLiked && "animate-like-heart"
+                    )}
                   />
-                  <span>{likeCount}</span>
+                  <span className={likeAnimation ? (hasLiked ? "animate-bounce-once" : "") : ""}>
+                    {likeCount}
+                  </span>
+                  
+                  {likeAnimation && hasLiked && (
+                    <>
+                      <span className="heart-particle absolute animate-particle-1" />
+                      <span className="heart-particle absolute animate-particle-2" />
+                      <span className="heart-particle absolute animate-particle-3" />
+                      <span className="heart-particle absolute animate-particle-4" />
+                    </>
+                  )}
                 </Button>
                 
                 <Button 

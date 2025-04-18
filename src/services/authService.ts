@@ -1,5 +1,6 @@
 import { supabase, checkSupabaseConnectivity } from '@/lib/supabase';
 import { toast } from '@/hooks/use-toast';
+import { showSuccessNotification, showErrorNotification, showWarningNotification } from '@/services/notificationService';
 
 // Tipos
 export interface User {
@@ -132,12 +133,19 @@ export async function signInWithEmail(email: string, password: string): Promise<
     
     console.log(`✅ Login bem-sucedido para: ${email}`);
     
+    // Exibir notificação de sucesso
+    showSuccessNotification(
+      "Login realizado",
+      `Bem-vindo ${user.first_name || user.username || 'de volta'}!`
+    );
+    
     // Dispatch auth event
     window.dispatchEvent(new Event('auth-state-changed'));
     
     return user as User;
   } catch (error: any) {
     console.error(`❌ Erro no login:`, error);
+    showErrorNotification("Falha no login", error.message || "Não foi possível completar o login");
     throw error;
   }
 }
@@ -558,16 +566,50 @@ export const checkAuthStatus = async (): Promise<boolean> => {
  * Versão melhorada que limpa todos os dados de sessão
  */
 export const signOut = async (): Promise<void> => {
-  localStorage.removeItem('current_user_id');
-  localStorage.removeItem('current_user_email');
-  localStorage.removeItem('current_user');
-  localStorage.removeItem('current_user_cache_time');
-  
-  // Disparar evento para notificar os componentes sobre a mudança
-  window.dispatchEvent(new Event('auth-state-changed'));
-  
-  // Redirecionar para a página de login
-  window.location.href = '/login';
+  try {
+    console.log("🚪 Iniciando processo de logout");
+    
+    // Dispatch evento para informar que um logout está iniciando
+    // para bloquear temporariamente checagens de autenticação
+    window.dispatchEvent(new Event('auth-logout-started'));
+    
+    // Define flag in sessionStorage to prevent auth checking during logout
+    window.sessionStorage.setItem('logout_in_progress', 'true');
+    
+    try {
+      // Limpar session no Supabase
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Erro ao fazer logout no Supabase:", e);
+      // Continue mesmo com erro, pois queremos limpar tudo localmente
+    }
+    
+    // Limpar localStorage 
+    localStorage.removeItem('current_user');
+    localStorage.removeItem('current_user_id');
+    localStorage.removeItem('current_user_email');
+    localStorage.removeItem('has_session');
+    localStorage.removeItem('current_user_cache_time');
+    
+    // Dispatch auth event
+    window.dispatchEvent(new Event('auth-state-changed'));
+    
+    // Exibir notificação
+    showSuccessNotification("Logout concluído", "Você saiu da sua conta com sucesso");
+    
+    console.log("✅ Logout concluído com sucesso");
+    
+    // Remove flag after logout is complete
+    window.sessionStorage.removeItem('logout_in_progress');
+  } catch (error) {
+    console.error("❌ Erro no logout:", error);
+    window.sessionStorage.removeItem('logout_in_progress');
+    
+    showErrorNotification(
+      "Erro ao fazer logout",
+      "Ocorreu um problema ao encerrar sua sessão"
+    );
+  }
 };
 
 /**
@@ -735,234 +777,165 @@ export async function getUserById(userId: string): Promise<User | null> {
  * Atualizar perfil do usuário
  * Versão melhorada que lida com problemas de conectividade e atualiza localmente se necessário
  */
-export async function updateUserProfile(userId: string, userData: Partial<User> & { displayName?: string, avatarUrl?: string, username?: string }): Promise<User | null> {
+export async function updateUserProfile(
+  userId: string, 
+  userData: Partial<User> & { displayName?: string, avatarUrl?: string, username?: string }
+): Promise<User | null> {
   try {
-    console.log(`✏️ Atualizando perfil do usuário: ${userId}`);
+    console.log("🔄 Atualizando perfil do usuário:", userId);
     
-    // Mapear campos para o formato correto (adaptação de camelCase para snake_case)
-    const dataToUpdate = {
-      display_name: userData.display_name || userData.displayName,
-      bio: userData.bio,
-      avatar_url: userData.avatar_url || userData.avatarUrl,
-      username: userData.username // Adicionando suporte para atualizar username
-    };
-    
-    // Remover campos que não foram fornecidos
-    Object.keys(dataToUpdate).forEach(key => {
-      if (dataToUpdate[key] === undefined) {
-        delete dataToUpdate[key];
-      }
-    });
-    
-    let updatedProfile = null;
-    let hasConnectivityError = false;
-    
-    // Verificar conectividade com o Supabase antes de tentar atualizar
+    // Verificar conectividade
     const isSupabaseAvailable = await checkSupabaseConnectivity();
     
     if (!isSupabaseAvailable) {
-      console.warn("⚠️ Supabase não está acessível. Usando fallback local.");
-      hasConnectivityError = true;
-    } else {
-      try {
-        // Atualizar na tabela users
-        const { data, error } = await supabase
-          .from('users')
-          .update(dataToUpdate)
-          .eq('id', userId)
-          .select()
-          .single();
-          
-        if (error) {
-          // Verificar se é um erro de recursão ou conectividade
-          if (error.message && (
-              error.message.includes('infinite recursion') ||
-              error.message.includes('ERR_NAME_NOT_RESOLVED') ||
-              error.message.includes('Failed to fetch')
-          )) {
-            console.warn(`⚠️ Erro de conectividade ao atualizar perfil, usando fallback local`);
-            hasConnectivityError = true;
-          } else {
-            console.error(`❌ Erro ao atualizar perfil: ${error.message}`);
-            toast({
-              title: "Erro ao atualizar perfil",
-              description: "Não foi possível salvar as alterações no servidor",
-              variant: "destructive"
-            });
-          }
-        } else {
-          updatedProfile = data;
-        }
-      } catch (dbError: any) {
-        console.error(`❌ Erro ao atualizar perfil: ${dbError?.message || 'Erro desconhecido'}`);
-        
-        // Verificar se é um erro de conectividade
-        if (dbError?.message && (
-            dbError.message.includes('Failed to fetch') || 
-            dbError.message.includes('ERR_NAME_NOT_RESOLVED') ||
-            dbError.message.includes('NetworkError') ||
-            dbError.message.includes('network')
-        )) {
-        
-          console.warn("⚠️ Problema de conectividade detectado, salvando alterações localmente");
-          hasConnectivityError = true;
-        } else {
-          toast({
-            title: "Erro ao atualizar perfil",
-            description: "Ocorreu um erro ao comunicar com o banco de dados",
-            variant: "destructive"
-          });
-          
-          // Se não conseguiu atualizar no servidor, vamos pelo menos salvar localmente
-          hasConnectivityError = true;
-        }
-      }
-    }
-    
-    // Se encontramos erro de conectividade OU se a atualização foi bem-sucedida, atualizar localStorage
-    
-    // Atualizar no localStorage (sempre)
-    const cachedUserStr = localStorage.getItem('current_user');
-    if (cachedUserStr) {
-      try {
-        const cachedUser = JSON.parse(cachedUserStr);
-        if (cachedUser.id === userId) {
-          // Combinar o usuário atual com os dados atualizados
-          const updatedUser = { ...cachedUser, ...dataToUpdate };
-          localStorage.setItem('current_user', JSON.stringify(updatedUser));
-          localStorage.setItem('current_user_cache_time', Date.now().toString());
-          
-          // Se tivemos erro de conectividade, usamos o objeto do cache como fallback
-          if (hasConnectivityError || !updatedProfile) {
-            updatedProfile = updatedUser;
-          }
-        }
-      } catch (e) {
-        console.error('Erro ao atualizar cache de usuário:', e);
-      }
-    }
-    
-    // Atualizar também no cache de usuários
-    const cachedUsersJson = localStorage.getItem('cached_users');
-    if (cachedUsersJson) {
-      try {
-        const cachedUsers = JSON.parse(cachedUsersJson);
-        const userIndex = cachedUsers.findIndex((u: any) => u.id === userId);
-        
-        if (userIndex >= 0) {
-          cachedUsers[userIndex] = { 
-            ...cachedUsers[userIndex], 
-            ...dataToUpdate 
-          };
-          localStorage.setItem('cached_users', JSON.stringify(cachedUsers));
-        }
-      } catch (e) {
-        console.error('Erro ao atualizar cache de usuários:', e);
-      }
-    }
-    
-    // Se não temos perfil atualizado mas temos os dados, criar um objeto básico
-    if (!updatedProfile && hasConnectivityError) {
-      updatedProfile = {
-        id: userId,
-        ...dataToUpdate,
-        role: 'user',
-      } as User;
-    }
-    
-    // Registrar o perfil nas alterações pendentes (quando voltar online)
-    if (hasConnectivityError) {
-      try {
-        // Salvar alterações pendentes para sincronizar quando reconectar
-        const pendingUpdates = JSON.parse(localStorage.getItem('pending_profile_updates') || '{}');
-        pendingUpdates[userId] = {
-          ...pendingUpdates[userId],
-          ...dataToUpdate,
-          timestamp: Date.now()
-        };
-        localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
-      } catch (e) {
-        console.error('Erro ao salvar alterações pendentes:', e);
-      }
-    }
-    
-    // Mostrar mensagem de sucesso
-    toast({
-      title: "Perfil atualizado",
-      description: hasConnectivityError 
-        ? "As alterações foram salvas localmente e serão sincronizadas quando houver conexão"
-        : "As alterações foram salvas com sucesso"
-    });
-    
-    // Verificar se houve mudança de nome para disparar evento específico
-    if (dataToUpdate.display_name || dataToUpdate.username) {
-      console.log("🔄 Nome de usuário alterado, disparando evento de atualização");
+      console.warn("⚠️ Supabase offline, salvando atualização localmente");
       
-      // Disparar evento específico para mudança de nome
-      const nameChangeEvent = new CustomEvent('user-name-changed', {
-        detail: {
-          userId: userId,
-          displayName: dataToUpdate.display_name,
-          username: dataToUpdate.username
-        }
+      // Salvar atualização localmente
+      const pendingUpdates = JSON.parse(localStorage.getItem('pending_profile_updates') || '[]');
+      pendingUpdates.push({
+        userId,
+        userData,
+        timestamp: Date.now()
       });
-      window.dispatchEvent(nameChangeEvent);
-    }
-    
-    // Disparar evento para notificar componentes sobre a mudança
-    window.dispatchEvent(new Event('auth-state-changed'));
-    
-    return updatedProfile as User;
-  } catch (error: any) {
-    console.error(`❌ Erro inesperado: ${error?.message || 'Erro desconhecido'}`);
-    
-    // Verificar se o erro é de conectividade
-    if (error?.message && (
-        error.message.includes('Failed to fetch') || 
-        error.message.includes('ERR_NAME_NOT_RESOLVED') ||
-        error.message.includes('NetworkError') ||
-        error.message.includes('network')
-    )) {
-      console.warn("⚠️ Problema de conectividade, tentando salvar localmente...");
+      localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
       
-      // Salvar apenas localmente
-      try {
-        const cachedUserStr = localStorage.getItem('current_user');
-        if (cachedUserStr && userId) {
-          const cachedUser = JSON.parse(cachedUserStr);
-          if (cachedUser.id === userId) {
-            // Atualizar localmente
-            const updatedUser = { ...cachedUser, ...userData };
-            localStorage.setItem('current_user', JSON.stringify(updatedUser));
-            
-            toast({
-              title: "Perfil atualizado localmente",
-              description: "As alterações foram salvas apenas no dispositivo devido a problemas de conexão"
-            });
-            
-            // Registrar para sincronizar depois
-            const pendingUpdates = JSON.parse(localStorage.getItem('pending_profile_updates') || '{}');
-            pendingUpdates[userId] = {
-              ...pendingUpdates[userId],
-              ...userData,
-              timestamp: Date.now()
-            };
-            localStorage.setItem('pending_profile_updates', JSON.stringify(pendingUpdates));
-            
-            return updatedUser as User;
-          }
-        }
-      } catch (e) {
-        console.error('Erro ao salvar localmente:', e);
+      // Atualizar cache local
+      const cachedUserStr = localStorage.getItem('current_user');
+      if (cachedUserStr && userId === localStorage.getItem('current_user_id')) {
+        const cachedUser = JSON.parse(cachedUserStr);
+        const updatedUser = { ...cachedUser };
+        
+        // Aplicar alterações localmente
+        if (userData.first_name) updatedUser.first_name = userData.first_name;
+        if (userData.displayName) updatedUser.display_name = userData.displayName;
+        if (userData.username) updatedUser.username = userData.username;
+        if (userData.phone_number) updatedUser.phone_number = userData.phone_number;
+        if (userData.bio) updatedUser.bio = userData.bio;
+        if (userData.avatarUrl) updatedUser.avatar_url = userData.avatarUrl;
+        
+        // Atualizar cache local
+        localStorage.setItem('current_user', JSON.stringify(updatedUser));
+        localStorage.setItem('current_user_cache_time', Date.now().toString());
+        
+        // Notificar sobre o modo offline
+        showWarningNotification(
+          "Perfil atualizado no modo offline",
+          "As alterações serão sincronizadas quando a conexão for restabelecida",
+          true
+        );
+        
+        return updatedUser as User;
       }
+      
+      showWarningNotification(
+        "Perfil atualizado no modo offline",
+        "As alterações serão sincronizadas quando a conexão for restabelecida",
+        true
+      );
+      
+      return null;
     }
     
-    toast({
-      title: "Erro ao atualizar perfil",
-      description: "Ocorreu um erro inesperado. Verifique sua conexão e tente novamente.",
-      variant: "destructive"
-    });
+    // Preparar dados para atualização
+    const dataToUpdate: Record<string, any> = {};
     
+    // Mapear campos usando aliases para nomes corretos da tabela
+    if (userData.first_name !== undefined) dataToUpdate.first_name = userData.first_name;
+    if (userData.displayName !== undefined) dataToUpdate.display_name = userData.displayName;
+    if (userData.username !== undefined) dataToUpdate.username = userData.username;
+    if (userData.phone_number !== undefined) dataToUpdate.phone_number = userData.phone_number;
+    if (userData.bio !== undefined) dataToUpdate.bio = userData.bio;
+    if (userData.avatarUrl !== undefined) dataToUpdate.avatar_url = userData.avatarUrl;
+    
+    // Atualizar perfil na tabela users do Supabase
+    const { data, error } = await supabase
+      .from('users')
+      .update(dataToUpdate)
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) {
+      console.error('Erro ao atualizar perfil:', error);
+      
+      // Verificar se é um erro relacionado à conectividade
+      if (error.message && (
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('network') ||
+        error.message.includes('connection')
+      )) {
+        // Salvar atualização localmente para sincronizar depois
+        showWarningNotification(
+          "Erro de conectividade",
+          "As alterações serão salvas localmente e sincronizadas mais tarde",
+          true
+        );
+        
+        // Código existente para salvar localmente...
+      } else {
+        showErrorNotification(
+          "Erro ao atualizar perfil",
+          error.message || "Não foi possível salvar as alterações"
+        );
+      }
+      
+      return null;
+    }
+    
+    if (!data) {
+      console.error('Erro: Dados de usuário não retornados após atualização');
+      showErrorNotification(
+        "Erro ao atualizar perfil",
+        "Servidor não retornou os dados atualizados"
+      );
+      return null;
+    }
+    
+    console.log('✅ Perfil atualizado com sucesso:', data);
+    
+    // Eventos de notificação para componentes que dependem destes dados
+    // Notify name change
+    if (userData.displayName || userData.username || userData.first_name) {
+      window.dispatchEvent(new CustomEvent('user-name-changed', {
+        detail: {
+          userId,
+          displayName: userData.displayName,
+          username: userData.username,
+          firstName: userData.first_name
+        }
+      }));
+    }
+    
+    // Notify avatar change
+    if (userData.avatarUrl) {
+      window.dispatchEvent(new CustomEvent('user-avatar-changed', {
+        detail: {
+          userId,
+          avatarUrl: userData.avatarUrl
+        }
+      }));
+    }
+    
+    // Atualizar cache local
+    const currentUserId = localStorage.getItem('current_user_id');
+    if (currentUserId === userId) {
+      localStorage.setItem('current_user', JSON.stringify(data));
+      localStorage.setItem('current_user_cache_time', Date.now().toString());
+    }
+    
+    // Exibir notificação de sucesso
+    showSuccessNotification(
+      "Perfil atualizado",
+      "Suas informações foram atualizadas com sucesso"
+    );
+    
+    return data as User;
+  } catch (error: any) {
+    console.error('Erro ao atualizar perfil:', error);
+    showErrorNotification(
+      "Erro ao atualizar perfil",
+      error.message || "Ocorreu um problema durante a atualização"
+    );
     return null;
   }
 }

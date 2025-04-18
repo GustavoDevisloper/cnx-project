@@ -25,6 +25,7 @@ import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 // Dias da semana em português
 const daysOfWeek = [
@@ -57,6 +58,7 @@ const Devotional = () => {
   const [likeCount, setLikeCount] = useState(0);
   const [hasLiked, setHasLiked] = useState(false);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [likeAnimation, setLikeAnimation] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -129,7 +131,9 @@ const Devotional = () => {
 
     if (!devotional) return;
     
+    setLikeAnimation(true);
     setIsLikeLoading(true);
+    
     try {
       const result = await toggleDevotionalLike(devotional.id);
       if (result.success) {
@@ -140,6 +144,9 @@ const Devotional = () => {
       console.error("Erro ao curtir devocional:", error);
     } finally {
       setIsLikeLoading(false);
+      setTimeout(() => {
+        setLikeAnimation(false);
+      }, 1000);
     }
   };
 
@@ -262,16 +269,32 @@ const Devotional = () => {
                   <div className="flex items-center gap-4">
                     <Button 
                       variant="ghost" 
-                      size="sm"
-                      className="flex items-center gap-2"
+                      className={`flex items-center gap-2 relative overflow-hidden ${
+                        likeAnimation ? (hasLiked ? 'animate-like-active' : 'animate-like-inactive') : ''
+                      }`}
                       onClick={handleLike}
                       disabled={isLikeLoading}
                     >
                       <Heart 
-                        size={16} 
-                        className={hasLiked ? "fill-primary text-primary" : ""} 
+                        size={20} 
+                        className={cn(
+                          "transition-all duration-300",
+                          hasLiked && "fill-primary text-primary",
+                          likeAnimation && hasLiked && "animate-like-heart"
+                        )}
                       />
-                      <span>{likeCount}</span>
+                      <span className={likeAnimation ? (hasLiked ? "animate-bounce-once" : "") : ""}>
+                        {likeCount}
+                      </span>
+                      
+                      {likeAnimation && hasLiked && (
+                        <>
+                          <span className="heart-particle absolute animate-particle-1" />
+                          <span className="heart-particle absolute animate-particle-2" />
+                          <span className="heart-particle absolute animate-particle-3" />
+                          <span className="heart-particle absolute animate-particle-4" />
+                        </>
+                      )}
                     </Button>
                     
                     <Button variant="ghost" size="sm" className="flex items-center gap-2">

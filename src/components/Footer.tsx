@@ -79,21 +79,21 @@ export default function Footer() {
         <div className="mt-8 pt-6 border-t border-border flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="text-center md:text-left">
             <p className="text-sm text-muted-foreground">© {currentYear} Conexão Jovem. Todos os direitos reservados.</p>
-            <p className="mt-1 text-sm text-muted-foreground">Desenvolvido com ❤️ para a comunidade.</p>
+            <p className="mt-1 text-sm text-muted-foreground">Desenvolvido por Gustavo | @_ogustah.</p>
           </div>
           <div className="flex items-center gap-4">
-            <a href="https://github.com" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+            <a href="https://github.com/GustavoDevisloper" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
               <Github className="h-5 w-5" />
               <span className="sr-only">Github</span>
             </a>
-            <a href="https://instagram.com" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+            <a href="https://www.instagram.com/cnxvidanova" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
               <Instagram className="h-5 w-5" />
               <span className="sr-only">Instagram</span>
             </a>
-            <a href="https://youtube.com" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
+            {/* <a href="https://youtube.com" target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
               <Youtube className="h-5 w-5" />
               <span className="sr-only">YouTube</span>
-            </a>
+            </a> */}
             <ThemeToggle />
           </div>
         </div>

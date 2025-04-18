@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/table";
 import { BadgeCheck, Edit, Trash, UserPlus, ShieldAlert, Loader2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useNavigate } from "react-router-dom";
 
 interface UsersListProps {
   filterRole?: string;
@@ -47,6 +48,7 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
     isAdmin: false
   });
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchUsers = async () => {
@@ -301,6 +303,10 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
     }
   };
 
+  const handleViewUserProfile = (userId: string) => {
+    navigate(`/admin/users/${userId}`);
+  };
+
   if (loading) {
     return (
       <div className="py-8 text-center">
@@ -362,7 +368,7 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
 
   // Advanced table view (used for admin panel)
   return (
-    <div className="space-y-4">
+    <div className="space-y-8">
       <div className="flex justify-between items-center">
         <h2 className="text-lg font-medium">Usuários do Sistema</h2>
         
@@ -442,80 +448,101 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
         </Dialog>
       </div>
       
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Usuário</TableHead>
-            <TableHead>Email</TableHead>
-            <TableHead>Função</TableHead>
-            <TableHead className="text-right">Ações</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {users.map((user) => (
-            <TableRow key={user.id}>
-              <TableCell className="font-medium">
-                {user.display_name || user.first_name || user.username || user.email.split('@')[0]}
-              </TableCell>
-              <TableCell>{user.email}</TableCell>
-              <TableCell>
-                <div className="flex items-center">
-                  <Button
-                    variant={user.role === 'admin' ? "default" : user.role === 'leader' ? "secondary" : "outline"}
-                    size="sm"
-                    className="h-8"
-                    disabled={!currentUserIsAdmin}
+      <Card>
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[250px]">Nome</TableHead>
+                <TableHead>Email</TableHead>
+                <TableHead>Função</TableHead>
+                <TableHead className="text-right">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">
+                    <div className="w-8 h-8 border-4 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+                    <p>Carregando usuários...</p>
+                  </TableCell>
+                </TableRow>
+              ) : users.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={4} className="text-center">
+                    <p>Nenhum usuário encontrado.</p>
+                  </TableCell>
+                </TableRow>
+              ) : (
+                users.map(user => (
+                  <TableRow 
+                    key={user.id} 
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => handleViewUserProfile(user.id)}
                   >
-                    {user.role === 'admin' ? (
-                      <>
-                        <BadgeCheck className="h-4 w-4 mr-2" />
-                        Administrador
-                      </>
-                    ) : user.role === 'leader' ? (
-                      "Líder"
-                    ) : (
-                      "Usuário"
-                    )}
-                  </Button>
-                </div>
-              </TableCell>
-              <TableCell className="text-right">
-                <div className="flex justify-end space-x-2">
-                  {currentUserIsAdmin && user.role !== 'admin' && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleRoleChange(user.id, 'admin')}
-                    >
-                      Tornar Admin
-                    </Button>
-                  )}
-                  
-                  {currentUserIsAdmin && user.role !== 'leader' && (
-                    <Button 
-                      variant="outline" 
-                      size="sm"
-                      onClick={() => handleRoleChange(user.id, 'leader')}
-                    >
-                      Tornar Líder
-                    </Button>
-                  )}
-                  
-                  {currentUserIsAdmin && user.role !== 'user' && (
-                    <Button 
-                      variant="destructive" 
-                      size="sm"
-                      onClick={() => handleRoleChange(user.id, 'user')}
-                    >
-                      Remover Função
-                    </Button>
-                  )}
-                </div>
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+                    <TableCell className="font-medium">{user.username || user.email}</TableCell>
+                    <TableCell>{user.email}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center">
+                        <Button
+                          variant={user.role === 'admin' ? "default" : user.role === 'leader' ? "secondary" : "outline"}
+                          size="sm"
+                          className="h-8"
+                          disabled={!currentUserIsAdmin}
+                        >
+                          {user.role === 'admin' ? (
+                            <>
+                              <BadgeCheck className="h-4 w-4 mr-2" />
+                              Administrador
+                            </>
+                          ) : user.role === 'leader' ? (
+                            "Líder"
+                          ) : (
+                            "Usuário"
+                          )}
+                        </Button>
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        {currentUserIsAdmin && user.role !== 'admin' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleRoleChange(user.id, 'admin'); }}
+                          >
+                            Tornar Admin
+                          </Button>
+                        )}
+                        
+                        {currentUserIsAdmin && user.role !== 'leader' && (
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleRoleChange(user.id, 'leader'); }}
+                          >
+                            Tornar Líder
+                          </Button>
+                        )}
+                        
+                        {currentUserIsAdmin && user.role !== 'user' && (
+                          <Button 
+                            variant="destructive" 
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleRoleChange(user.id, 'user'); }}
+                          >
+                            Remover Função
+                          </Button>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
     </div>
   );
 }

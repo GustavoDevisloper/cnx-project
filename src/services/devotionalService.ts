@@ -354,10 +354,11 @@ export const getDevotionalComments = async (devotionalId: string): Promise<Devot
  */
 export const addDevotionalComment = async (devotionalId: string, text: string): Promise<DevotionalComment | null> => {
   try {
-    // Primeiro, verificar a sessão do Supabase
-    const { data: session } = await supabase.auth.getSession();
-    if (!session?.session?.user?.id) {
-      console.log('Usuário não está autenticado no Supabase');
+    // Verificar o usuário usando nosso sistema próprio de autenticação
+    const user = await getCurrentUser();
+    
+    if (!user) {
+      console.log('Usuário não está autenticado');
       toast({
         title: "Não autenticado",
         description: "Você precisa estar logado para comentar",
@@ -366,27 +367,11 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
       return null;
     }
 
-    const userId = session.session.user.id;
+    const userId = user.id;
     console.log('ID do usuário autenticado:', userId);
 
-    // Verificar se o usuário existe na tabela users
-    const { data: userData, error: userError } = await supabase
-      .from('users')
-      .select('id, first_name, username, avatar_url')
-      .eq('id', userId)
-      .single();
+    // Já temos os dados do usuário pelo getCurrentUser, não precisamos verificar na tabela users
 
-    if (userError || !userData) {
-      console.error('Erro ao verificar usuário:', userError);
-      toast({
-        title: "Erro de autenticação",
-        description: "Não foi possível verificar suas credenciais",
-        variant: "destructive"
-      });
-      return null;
-    }
-
-    console.log('Dados do usuário:', userData);
     console.log('Tentando adicionar comentário para o devocional:', devotionalId);
     
     const commentData = {
@@ -399,6 +384,43 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
 
     console.log('Dados do comentário:', commentData);
     
+    // Verificar conectividade antes de tentar postar o comentário
+    const isSupabaseAvailable = await checkSupabaseConnectivity();
+    
+    if (!isSupabaseAvailable) {
+      console.warn("⚠️ Supabase não está acessível. Salvando comentário localmente.");
+      
+      // Implementar lógica para salvar comentário localmente para sincronização posterior
+      // Podemos usar a mesma abordagem que usamos para os devocionais
+      const offlineCommentId = `offline_comment_${Date.now().toString(36)}${Math.random().toString(36).substring(2)}`;
+      
+      // Salvar em localStorage para sincronização futura
+      const pendingComments = JSON.parse(localStorage.getItem('pending_comments') || '[]');
+      pendingComments.push({
+        ...commentData,
+        id: offlineCommentId,
+        pendingCreation: true,
+        pendingTimestamp: Date.now()
+      });
+      localStorage.setItem('pending_comments', JSON.stringify(pendingComments));
+      
+      toast({
+        title: "Comentário salvo localmente",
+        description: "O comentário foi salvo no seu dispositivo e será sincronizado quando houver conexão"
+      });
+      
+      // Retornar dados temporários para mostrar na interface
+      return {
+        id: offlineCommentId,
+        text: text,
+        author: user.first_name || user.username || user.email || 'Usuário',
+        authorId: userId,
+        authorAvatar: user.avatar_url,
+        createdAt: new Date().toISOString()
+      };
+    }
+    
+    // Se o Supabase estiver disponível, prosseguir com a inserção online
     const { data, error } = await supabase
       .from('devotional_comments')
       .insert(commentData)
@@ -406,17 +428,48 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
         id,
         content,
         created_at,
-        user_id,
-        users:user_id (
-          username,
-          first_name,
-          avatar_url
-        )
+        user_id
       `)
       .single();
       
     if (error) {
       console.error("Erro ao adicionar comentário:", error);
+      
+      // Se for erro de conectividade, tentar salvar localmente
+      if (error.message && (
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('ERR_NAME_NOT_RESOLVED') ||
+        error.message.includes('NetworkError')
+      )) {
+        console.warn("⚠️ Problema de conectividade detectado, salvando comentário localmente");
+        
+        // Salvar em localStorage para sincronização futura
+        const offlineCommentId = `offline_comment_${Date.now().toString(36)}${Math.random().toString(36).substring(2)}`;
+        const pendingComments = JSON.parse(localStorage.getItem('pending_comments') || '[]');
+        pendingComments.push({
+          ...commentData,
+          id: offlineCommentId,
+          pendingCreation: true,
+          pendingTimestamp: Date.now()
+        });
+        localStorage.setItem('pending_comments', JSON.stringify(pendingComments));
+        
+        toast({
+          title: "Comentário salvo localmente",
+          description: "O comentário foi salvo no seu dispositivo e será sincronizado quando houver conexão"
+        });
+        
+        // Retornar dados temporários para mostrar na interface
+        return {
+          id: offlineCommentId,
+          text: text,
+          author: user.first_name || user.username || user.email || 'Usuário',
+          authorId: userId,
+          authorAvatar: user.avatar_url,
+          createdAt: new Date().toISOString()
+        };
+      }
+      
       toast({
         title: "Erro ao comentar",
         description: error.message || "Não foi possível adicionar seu comentário",
@@ -435,9 +488,9 @@ export const addDevotionalComment = async (devotionalId: string, text: string): 
     return {
       id: data.id,
       text: data.content,
-      author: data.users?.first_name || data.users?.username || 'Usuário',
+      author: user.first_name || user.username || user.email || 'Usuário',
       authorId: data.user_id,
-      authorAvatar: data.users?.avatar_url,
+      authorAvatar: user.avatar_url,
       createdAt: data.created_at
     };
   } catch (error) {
@@ -1007,6 +1060,113 @@ export const getPendingDevotionals = (): Devotional[] => {
     return pendingDevotionals;
   } catch (error) {
     console.error('Erro ao buscar devocionais pendentes:', error);
+    return [];
+  }
+};
+
+/**
+ * Sincroniza comentários pendentes quando o usuário ficar online
+ */
+export const syncPendingComments = async (): Promise<boolean> => {
+  try {
+    // Verificar se há conexão
+    if (!window.navigator.onLine) {
+      console.log("🔄 Tentativa de sincronização de comentários ignorada: usuário offline");
+      return false;
+    }
+    
+    // Verificar se o serviço Supabase está disponível
+    const isSupabaseAvailable = await checkSupabaseConnectivity();
+    if (!isSupabaseAvailable) {
+      console.log("🔄 Serviço Supabase indisponível, adiando sincronização de comentários");
+      return false;
+    }
+    
+    // Verificar se há comentários pendentes
+    const pendingCommentsStr = localStorage.getItem('pending_comments');
+    if (!pendingCommentsStr) return false;
+    
+    const pendingComments = JSON.parse(pendingCommentsStr);
+    if (pendingComments.length === 0) {
+      localStorage.removeItem('pending_comments');
+      return false;
+    }
+    
+    console.log(`🔄 Sincronizando ${pendingComments.length} comentários pendentes...`);
+    
+    let successCount = 0;
+    const failedComments = [];
+    
+    // Processar cada comentário pendente
+    for (const commentData of pendingComments) {
+      try {
+        // Remover campos que não fazem parte da tabela
+        const { id, pendingCreation, pendingTimestamp, ...dataToSave } = commentData;
+        
+        // Aplicar no servidor
+        const { data, error } = await supabase
+          .from('devotional_comments')
+          .insert(dataToSave)
+          .select()
+          .single();
+          
+        if (error) {
+          console.error(`❌ Falha ao sincronizar comentário ${commentData.id}:`, error.message);
+          failedComments.push(commentData);
+          continue;
+        }
+        
+        console.log(`✅ Comentário ${data.id} sincronizado com sucesso`);
+        successCount++;
+      } catch (error) {
+        console.error(`❌ Erro ao sincronizar comentário ${commentData.id}:`, error);
+        failedComments.push(commentData);
+      }
+    }
+    
+    // Atualizar lista de pendentes com apenas os que falharam
+    if (failedComments.length > 0) {
+      localStorage.setItem('pending_comments', JSON.stringify(failedComments));
+    } else {
+      localStorage.removeItem('pending_comments');
+    }
+    
+    // Notificar o usuário sobre a sincronização
+    if (successCount > 0) {
+      toast({
+        title: "Comentários sincronizados",
+        description: `${successCount} comentários foram sincronizados com sucesso`
+      });
+      
+      // Avisar aplicação que dados foram sincronizados
+      window.dispatchEvent(new Event('comments-sync-completed'));
+    }
+    
+    return successCount > 0;
+  } catch (error) {
+    console.error('❌ Erro ao sincronizar comentários:', error);
+    return false;
+  }
+};
+
+/**
+ * Obtém comentários pendentes de sincronização
+ */
+export const getPendingComments = (): DevotionalComment[] => {
+  try {
+    const pendingCommentsStr = localStorage.getItem('pending_comments');
+    if (!pendingCommentsStr) return [];
+    
+    const pendingComments = JSON.parse(pendingCommentsStr);
+    return pendingComments.map(comment => ({
+      id: comment.id,
+      text: comment.content,
+      author: 'Você (pendente)',
+      authorId: comment.user_id,
+      createdAt: comment.created_at
+    }));
+  } catch (error) {
+    console.error('Erro ao buscar comentários pendentes:', error);
     return [];
   }
 }; 
