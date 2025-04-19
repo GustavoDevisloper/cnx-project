@@ -73,9 +73,7 @@
     --input: 217 33% 17%;
     --ring: 213 27% 84%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
@@ -104,6 +102,22 @@
 
   h4 {
     @apply text-xl lg:text-2xl;
+  }
+  
+  /* Estilos para melhorar a qualidade de imagens em avatares */
+  img, [data-state="loaded"].avatar-image {
+    image-rendering: -webkit-optimize-contrast;
+    image-rendering: crisp-edges;
+    backface-visibility: hidden;
+    transform: translateZ(0);
+  }
+  
+  /* Classe específica para avatares */
+  .image-rendering-high {
+    image-rendering: high-quality;
+    image-rendering: -webkit-optimize-contrast;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
   }
 }
 

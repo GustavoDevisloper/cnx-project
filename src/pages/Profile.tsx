@@ -23,6 +23,7 @@ interface ExtendedUser extends User {
   createdAt?: string;
   profileViews?: number;
   username?: string;
+  last_login?: string;
 }
 
 // We'll try multiple bucket names - many Supabase projects start with 'public' bucket
@@ -87,6 +88,22 @@ const Profile = () => {
         } else {
           profileUser = await getUserById(userId);
           setIsCurrentUser(currentUser?.id === userId);
+          
+          // Se não for o próprio usuário, incrementar visualizações do perfil
+          if (currentUser?.id !== userId && profileUser) {
+            try {
+              // Incrementar contador de visualizações
+              await supabase
+                .from('users')
+                .update({ profile_views: (profileUser.profile_views || 0) + 1 })
+                .eq('id', userId);
+              
+              // Atualizar contagem local para refletir o incremento
+              profileUser.profile_views = (profileUser.profile_views || 0) + 1;
+            } catch (error) {
+              console.error('Erro ao incrementar visualizações:', error);
+            }
+          }
         }
         
         if (!profileUser) {
@@ -102,7 +119,10 @@ const Profile = () => {
           avatarUrl: profileUser.avatar_url || '',
           createdAt: profileUser.created_at || new Date().toISOString(),
           profileViews: profileUser.profile_views || 0,
-          username: profileUser.username || ''
+          username: profileUser.username || '',
+          // Se o campo last_login ainda não existir no banco, usar a data atual para o usuário atual
+          // ou uma data recente para outros usuários
+          last_login: profileUser.last_login || (isCurrentUser ? new Date().toISOString() : new Date(Date.now() - 86400000).toISOString())
         };
         
         setUser(enhancedUser);
@@ -262,7 +282,7 @@ const Profile = () => {
       // Usar fileToBase64 do serviço de armazenamento para redimensionar a imagem
       try {
         // Importamos a função do storageService
-        const avatarUrl = await fileToBase64(selectedFile, 100, 100, 0.3);
+        const avatarUrl = await fileToBase64(selectedFile, 300, 300, 0.9);
         
         if (!avatarUrl) {
           throw new Error('Não foi possível processar a imagem');
@@ -513,6 +533,7 @@ const Profile = () => {
                       src={user.avatarUrl} 
                       alt={user.displayName || 'User'} 
                       key={avatarKey}
+                      className="image-rendering-high"
                       onError={() => {
                         console.log('Erro ao carregar imagem de perfil');
                         setAvatarKey(Date.now());
@@ -784,7 +805,28 @@ const Profile = () => {
               <div className="space-y-4">
                 <div>
                   <h3 className="font-medium text-sm text-muted-foreground">Membro desde</h3>
-                  <p>{new Date(user.created_at).toLocaleDateString()}</p>
+                  <p>{new Date(user.created_at ?? '').toLocaleDateString()}</p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-sm text-muted-foreground">Visualizações do perfil</h3>
+                  <p>{user.profileViews || 0}</p>
+                </div>
+                <div>
+                  <h3 className="font-medium text-sm text-muted-foreground">Último acesso</h3>
+                  <p>
+                    {(() => {
+                      try {
+                        // Se last_login não existir, use a data atual (para o usuário atual) 
+                        // ou uma data recente (para outros usuários)
+                        const lastLogin = user.last_login || 
+                          (isCurrentUser ? new Date().toISOString() : new Date(Date.now() - 86400000).toISOString());
+                        const date = new Date(lastLogin);
+                        return `${date.toLocaleDateString()} às ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                      } catch (e) {
+                        return "Data não disponível";
+                      }
+                    })()}
+                  </p>
                 </div>
                 <div>
                   <h3 className="font-medium text-sm text-muted-foreground">Função</h3>

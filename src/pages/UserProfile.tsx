@@ -8,9 +8,10 @@ import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Separator } from '@/components/ui/separator';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { ShieldCheck, User as UserIcon, Mail, Phone, Calendar, Info, ArrowLeft, Edit, Lock } from 'lucide-react';
+import { ShieldCheck, User as UserIcon, Mail, Phone, Calendar, Info, ArrowLeft, Edit, Lock, MessageSquare } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
-import { formatDate } from '@/lib/utils';
+import { formatDate, logger } from '@/lib/utils';
+import WhatsAppContactOptions from '@/components/WhatsAppContactOptions';
 
 interface ExtendedUser extends User {
   displayName?: string;
@@ -67,7 +68,7 @@ export default function UserProfile() {
           return;
         }
         
-        console.log("Dados brutos do usuário:", userData);
+        logger.log("Dados brutos do usuário:", userData);
         
         // Formatar dados do usuário
         const formattedUser: ExtendedUser = {
@@ -83,12 +84,12 @@ export default function UserProfile() {
           loginCount: userData.login_count || 0
         };
         
-        console.log("Dados formatados do usuário:", formattedUser);
+        logger.log("Dados formatados do usuário:", formattedUser);
         
         setUser(formattedUser);
         document.title = `Perfil de ${formattedUser.displayName || 'Usuário'}`;
       } catch (error) {
-        console.error('Erro ao carregar perfil:', error);
+        logger.error('Erro ao carregar perfil:', error);
         toast({
           title: 'Erro ao carregar perfil',
           description: 'Não foi possível carregar as informações do perfil do usuário.',
@@ -126,6 +127,33 @@ export default function UserProfile() {
   
   const handleBackToUsers = () => {
     navigate('/admin?tab=users');
+  };
+
+  const handleWhatsAppRedirect = (phoneNumber: string | undefined) => {
+    if (!phoneNumber || phoneNumber === 'Não informado') {
+      toast({
+        title: "Número não disponível",
+        description: "Este usuário não cadastrou um número de telefone",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Formatar o número (remover caracteres especiais e espaços)
+    const formattedNumber = phoneNumber.replace(/\D/g, "");
+    
+    // Verificar se o número está vazio após a formatação
+    if (!formattedNumber) {
+      toast({
+        title: "Número inválido",
+        description: "O formato do número de telefone não é válido",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Abrir URL do WhatsApp
+    window.open(`https://wa.me/${formattedNumber}`, '_blank');
   };
 
   if (loading) {
@@ -173,39 +201,46 @@ export default function UserProfile() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="col-span-1">
-          <CardHeader>
-            <CardTitle>Informações Básicas</CardTitle>
-          </CardHeader>
-          <CardContent className="flex flex-col items-center text-center">
-            <Avatar className="h-28 w-28 mb-4">
-              <AvatarImage 
-                src={user.avatarUrl} 
-                alt={user.displayName} 
-              />
-              <AvatarFallback className="text-xl">
-                {getInitials(user.displayName || user.username || '')}
-              </AvatarFallback>
-            </Avatar>
-            
-            <h2 className="text-2xl font-bold mb-1">{user.displayName}</h2>
-            <p className="text-muted-foreground mb-2">@{user.username}</p>
-            
-            <div className="flex gap-2 mb-4">
-              {getRoleBadge(user.role)}
-              {user.isVerified && (
-                <Badge variant="outline" className="bg-green-100 text-green-700">
-                  <ShieldCheck className="h-3 w-3 mr-1" />
-                  Verificado
-                </Badge>
-              )}
-            </div>
-            
-            <p className="text-sm text-muted-foreground">
-              Membro desde {formatDate(user.createdAt || '')}
-            </p>
-          </CardContent>
-        </Card>
+        <div className="space-y-6">
+          <Card className="col-span-1">
+            <CardHeader>
+              <CardTitle>Informações Básicas</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center text-center">
+              <Avatar className="h-28 w-28 mb-4">
+                <AvatarImage 
+                  src={user.avatarUrl} 
+                  alt={user.displayName} 
+                />
+                <AvatarFallback className="text-xl">
+                  {getInitials(user.displayName || user.username || '')}
+                </AvatarFallback>
+              </Avatar>
+              
+              <h2 className="text-2xl font-bold mb-1">{user.displayName}</h2>
+              <p className="text-muted-foreground mb-2">@{user.username}</p>
+              
+              <div className="flex gap-2 mb-4">
+                {getRoleBadge(user.role)}
+                {user.isVerified && (
+                  <Badge variant="outline" className="bg-green-100 text-green-700">
+                    <ShieldCheck className="h-3 w-3 mr-1" />
+                    Verificado
+                  </Badge>
+                )}
+              </div>
+              
+              <p className="text-sm text-muted-foreground">
+                Membro desde {formatDate(user.createdAt || '')}
+              </p>
+            </CardContent>
+          </Card>
+
+          {/* Adicionar opções de contato via WhatsApp */}
+          {isAdminUser && user && (
+            <WhatsAppContactOptions user={user} />
+          )}
+        </div>
 
         <Card className="col-span-1 lg:col-span-2">
           <CardHeader>
@@ -248,23 +283,31 @@ export default function UserProfile() {
               
               {isAdminUser && (
                 <TabsContent value="contact" className="space-y-4">
-                  <div>
-                    <h3 className="text-lg font-semibold mb-2">Informações de Contato</h3>
-                    <div className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Email</h3>
                       <div className="flex items-center">
-                        <Mail className="h-5 w-5 mr-2 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium">Email</p>
-                          <p className="text-muted-foreground">{user.email}</p>
-                        </div>
+                        <Mail className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <p>{user.email}</p>
                       </div>
-                      
+                    </div>
+                    
+                    <div>
+                      <h3 className="text-lg font-semibold mb-2">Telefone</h3>
                       <div className="flex items-center">
-                        <Phone className="h-5 w-5 mr-2 text-muted-foreground" />
-                        <div>
-                          <p className="font-medium">Telefone</p>
-                          <p className="text-muted-foreground">{user.phone}</p>
-                        </div>
+                        <Phone className="h-4 w-4 mr-2 text-muted-foreground" />
+                        <p>{user.phone || 'Não informado'}</p>
+                        
+                        {user.phone && user.phone !== 'Não informado' && (
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="ml-2"
+                            onClick={() => handleWhatsAppRedirect(user.phone)}
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                        )}
                       </div>
                     </div>
                   </div>

@@ -220,6 +220,10 @@ export const fileToBase64 = async (
             return;
           }
           
+          // Configuração para melhorar qualidade de renderização
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = 'high';
+          
           // Fundo branco para imagens com transparência (melhor compatibilidade)
           ctx.fillStyle = '#FFFFFF';
           ctx.fillRect(0, 0, width, height);
@@ -227,24 +231,36 @@ export const fileToBase64 = async (
           // Desenhar imagem redimensionada
           ctx.drawImage(img, 0, 0, width, height);
           
-          // Converter para base64 com formato JPEG para menor tamanho
-          let base64 = canvas.toDataURL('image/jpeg', quality);
+          // Usar formato PNG para imagens pequenas para melhor qualidade
+          const isPngBetter = file.type === 'image/png' && file.size < 500 * 1024;
+          
+          // Converter para base64 com formato adequado
+          let base64;
+          if (isPngBetter) {
+            // Para PNG pequenos, usar PNG para melhor qualidade
+            base64 = canvas.toDataURL('image/png', 1.0);
+          } else {
+            // Para outros tipos, usar JPEG com alta qualidade
+            base64 = canvas.toDataURL('image/jpeg', quality);
+          }
           
           // Se ainda estiver muito grande, reduzir mais a qualidade
-          if (base64.length > 50000) {
-            base64 = canvas.toDataURL('image/jpeg', 0.6);
+          if (base64.length > 80000) {
+            base64 = canvas.toDataURL('image/jpeg', 0.7);
           }
           
           // Se ainda estiver muito grande, reduzir ainda mais
-          if (base64.length > 40000) {
+          if (base64.length > 60000) {
             console.log('Reduzindo qualidade da imagem para garantir compatibilidade');
-            // Reduzir ainda mais o tamanho
-            canvas.width = Math.round(width * 0.8);
-            canvas.height = Math.round(height * 0.8);
+            // Reduzir mais o tamanho, mas mantendo resolução razoável
+            canvas.width = Math.round(width * 0.9);
+            canvas.height = Math.round(height * 0.9);
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            base64 = canvas.toDataURL('image/jpeg', 0.4);
+            base64 = canvas.toDataURL('image/jpeg', 0.6);
           }
           
           console.log(`Imagem convertida para base64: ${base64.length} caracteres`);

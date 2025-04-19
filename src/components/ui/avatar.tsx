@@ -112,7 +112,16 @@ const AvatarImage = React.forwardRef<
   return (
     <AvatarPrimitive.Image
       ref={ref}
-      className={cn("aspect-square h-full w-full", className)}
+      className={cn(
+        "aspect-square h-full w-full object-cover", 
+        "image-rendering-high",
+        className
+      )}
+      style={{
+        imageRendering: 'high-quality',
+        objectFit: 'cover',
+        objectPosition: 'center'
+      }}
       src={imgSrc}
       alt={alt}
       onError={handleError}

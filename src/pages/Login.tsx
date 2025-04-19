@@ -85,6 +85,23 @@ export default function Login() {
       // Limpar flag de login em andamento antes de redirecionar
       sessionStorage.removeItem('login_in_progress');
       
+      // Verificar e atualizar o último login
+      if (user) {
+        try {
+          // Forçar atualização da data de último login
+          const now = new Date().toISOString();
+          const userWithLastLogin = {
+            ...user,
+            last_login: now
+          };
+          
+          // Atualizar no localStorage
+          localStorage.setItem('current_user', JSON.stringify(userWithLastLogin));
+        } catch (error) {
+          console.error('Erro ao atualizar último login:', error);
+        }
+      }
+      
       // Disparar evento personalizado para avisar componentes que a autenticação mudou
       window.dispatchEvent(new Event('auth-state-changed'));
       

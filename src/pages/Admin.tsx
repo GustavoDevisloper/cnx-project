@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
 import { Navigate, useSearchParams, useNavigate } from "react-router-dom";
-import { isAdmin, isLeader, getCurrentUser, isAuthenticated } from "@/services/authService";
+import { isAdmin, isLeader, getCurrentUser, isAuthenticated, getAllUsers, User } from "@/services/authService";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import UsersList from "@/components/UsersList";
 import LeaderManagement from "@/components/LeaderManagement";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { PlusCircle, Users, Calendar, MessageCircleQuestion, Music, Settings, FileText, BarChart, RefreshCw } from "lucide-react";
+import { PlusCircle, Users, Calendar, MessageCircleQuestion, Music, Settings, FileText, BarChart, RefreshCw, MessageSquare } from "lucide-react";
 import EventsList from "@/components/EventsList";
 import QuestionsList from "@/components/QuestionsList";
 import { toast } from "@/hooks/use-toast";
 import { DashboardStats, getDashboardStats } from "@/services/statsService";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { getWhatsAppLink } from "@/services/whatsappBotService";
+import { logger } from "@/lib/utils";
 
 export default function Admin() {
   const [loading, setLoading] = useState(true);
@@ -30,6 +33,57 @@ export default function Admin() {
     error: null
   });
   
+  // Estado para a lista de usuários
+  const [users, setUsers] = useState<User[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+
+  // Função para carregar usuários
+  const loadUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const allUsers = await getAllUsers();
+      setUsers(allUsers);
+    } catch (error) {
+      logger.error("Erro ao carregar lista de usuários:", error);
+      toast({
+        title: "Erro ao carregar usuários",
+        description: "Não foi possível obter a lista de usuários",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  // Função para abrir chat no WhatsApp
+  const openWhatsAppChat = (phoneNumber: string | undefined, userName?: string) => {
+    if (!phoneNumber) {
+      toast({
+        title: "Número não disponível",
+        description: "Este usuário não cadastrou um número de telefone",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    logger.log(`Tentando abrir WhatsApp para: ${userName || 'usuário'} - Número: ${phoneNumber}`);
+    
+    // Usar a função do serviço para criar o link apenas com o número (sem mensagem)
+    const whatsappLink = getWhatsAppLink(phoneNumber);
+    
+    if (whatsappLink) {
+      logger.log(`Link do WhatsApp gerado com sucesso: ${whatsappLink}`);
+      window.open(whatsappLink, '_blank');
+    } else {
+      logger.error(`Erro ao gerar link do WhatsApp para o número: ${phoneNumber}`);
+      toast({
+        title: "Erro ao gerar link do WhatsApp",
+        description: "O número de telefone pode estar em um formato inválido. Por favor, verifique se o formato está correto (ex: (11) 99999-9999)",
+        variant: "destructive"
+      });
+    }
+  };
+  
   // Função para carregar as estatísticas
   const loadStats = async () => {
     setStats(prev => ({ ...prev, loading: true, error: null }));
@@ -37,7 +91,7 @@ export default function Admin() {
       const dashboardStats = await getDashboardStats();
       setStats(dashboardStats);
     } catch (error: any) {
-      console.error("Erro ao carregar estatísticas:", error);
+      logger.error("Erro ao carregar estatísticas:", error);
       setStats(prev => ({
         ...prev,
         loading: false,
@@ -59,7 +113,7 @@ export default function Admin() {
         const authStatus = await isAuthenticated();
         
         if (!authStatus) {
-          console.log("Usuário não está autenticado");
+          logger.log("Usuário não está autenticado");
           setIsLoggedIn(false);
           setLoading(false);
           return;
@@ -68,10 +122,10 @@ export default function Admin() {
         setIsLoggedIn(true);
         
         const user = await getCurrentUser();
-        console.log("Dados do usuário:", user);
+        logger.log("Dados do usuário:", user);
         
         if (!user) {
-          console.log("Dados do usuário não encontrados");
+          logger.log("Dados do usuário não encontrados");
           toast({
             title: "Erro de permissão",
             description: "Não foi possível carregar os dados do usuário",
@@ -86,9 +140,9 @@ export default function Admin() {
         
         const hasPermission = isUserAdmin || isUserLeader;
         
-        console.log("É admin:", isUserAdmin);
-        console.log("É líder:", isUserLeader);
-        console.log("Tem permissão:", hasPermission);
+        logger.log("É admin:", isUserAdmin);
+        logger.log("É líder:", isUserLeader);
+        logger.log("Tem permissão:", hasPermission);
         
         setIsAdminUser(isUserAdmin);
         setHasAccess(hasPermission);
@@ -104,7 +158,7 @@ export default function Admin() {
           loadStats();
         }
       } catch (error) {
-        console.error("Erro ao verificar permissões:", error);
+        logger.error("Erro ao verificar permissões:", error);
         toast({
           title: "Erro ao verificar permissões",
           description: "Por favor, tente novamente ou entre em contato com o suporte",
@@ -118,7 +172,7 @@ export default function Admin() {
     };
 
     const handleAuthChanged = () => {
-      console.log("🔄 Estado de autenticação mudou, verificando permissões");
+      logger.log("🔄 Estado de autenticação mudou, verificando permissões");
       checkAccess();
     };
 
@@ -138,6 +192,13 @@ export default function Admin() {
     }
   }, [defaultTab, hasAccess, loading]);
 
+  // Efeito para carregar usuários quando a aba WhatsApp é selecionada
+  useEffect(() => {
+    if (defaultTab === 'whatsapp' && hasAccess && !loading) {
+      loadUsers();
+    }
+  }, [defaultTab, hasAccess, loading]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -150,7 +211,7 @@ export default function Admin() {
   }
 
   if (!isLoggedIn) {
-    console.log("Redirecionando para login com URL de retorno");
+    logger.log("Redirecionando para login com URL de retorno");
     return <Navigate to={`/login?redirect=${encodeURIComponent('/admin')}`} replace />;
   }
 
@@ -194,21 +255,23 @@ export default function Admin() {
             Dúvidas
           </TabsTrigger>
           {isAdminUser && (
-            <TabsTrigger 
-              value="users" 
-              onClick={() => navigate('/admin?tab=users', { replace: true })}
-            >
-              <Users className="h-4 w-4 mr-1.5" />
-              Usuários
-            </TabsTrigger>
+            <>
+              <TabsTrigger 
+                value="users" 
+                onClick={() => navigate('/admin?tab=users', { replace: true })}
+              >
+                <Users className="h-4 w-4 mr-1.5" />
+                Usuários
+              </TabsTrigger>
+              <TabsTrigger 
+                value="whatsapp" 
+                onClick={() => navigate('/admin?tab=whatsapp', { replace: true })}
+              >
+                <MessageSquare className="h-4 w-4 mr-1.5" />
+                WhatsApp
+              </TabsTrigger>
+            </>
           )}
-          <TabsTrigger 
-            value="leaders" 
-            onClick={() => navigate('/admin?tab=leaders', { replace: true })}
-          >
-            <Users className="h-4 w-4 mr-1.5" />
-            Líderes
-          </TabsTrigger>
           <TabsTrigger 
             value="content" 
             onClick={() => navigate('/admin?tab=content', { replace: true })}
@@ -300,7 +363,7 @@ export default function Admin() {
                   variant="outline" 
                   className="w-full justify-start" 
                   onClick={() => {
-                    console.log("Navegando para /devotional/new");
+                    logger.log("Navegando para /devotional/new");
                     navigate('/devotional/new');
                   }}
                 >
@@ -384,31 +447,85 @@ export default function Admin() {
           </TabsContent>
         )}
 
-        <TabsContent value="leaders" className="space-y-4">
+        <TabsContent value="whatsapp" className="space-y-4">
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <div>
-                  <CardTitle>Gerenciar Líderes</CardTitle>
+                  <CardTitle>Contatos WhatsApp</CardTitle>
                   <CardDescription>
-                    Adicione ou remova permissões de líderes
+                    Lista de usuários com seus contatos para WhatsApp
                   </CardDescription>
                 </div>
+                <Button variant="outline" size="sm" onClick={loadUsers} disabled={loadingUsers}>
+                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingUsers ? 'animate-spin' : ''}`} />
+                  Atualizar Lista
+                </Button>
               </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-6">
-                <LeaderManagement />
-                
-                <div className="mt-8">
-                  <h3 className="text-lg font-medium mb-4">Líderes Atuais</h3>
-                  <UsersList filterRole="leader" />
-                </div>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[250px]">Nome Real</TableHead>
+                      <TableHead>Exibição</TableHead>
+                      <TableHead>Telefone</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {loadingUsers ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="text-center py-10">
+                          <div className="w-8 h-8 border-4 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
+                          <p>Carregando contatos...</p>
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      <>
+                        {users
+                          .filter(user => user.phone_number)
+                          .map((user) => (
+                            <TableRow key={user.id}>
+                              <TableCell className="font-medium">
+                                {user.real_name || user.first_name || "Nome não definido"}
+                              </TableCell>
+                              <TableCell>
+                                {user.display_name || user.displayName || user.username || user.email}
+                              </TableCell>
+                              <TableCell>{user.phone_number}</TableCell>
+                              <TableCell className="text-right">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openWhatsAppChat(
+                                    user.phone_number, 
+                                    user.real_name || user.first_name || user.display_name
+                                  )}
+                                >
+                                  <MessageSquare className="h-4 w-4 mr-2" />
+                                  WhatsApp
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        {users.filter(user => user.phone_number).length === 0 && !loadingUsers && (
+                          <TableRow>
+                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
+                              Nenhum usuário com número de WhatsApp encontrado.
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </>
+                    )}
+                  </TableBody>
+                </Table>
               </div>
             </CardContent>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="content" className="space-y-4">
           <Card>
             <CardHeader>
@@ -434,7 +551,7 @@ export default function Admin() {
                         variant="outline" 
                         className="w-full justify-start" 
                         onClick={() => {
-                          console.log("Navegando para /devotional/new");
+                          logger.log("Navegando para /devotional/new");
                           navigate('/devotional/new');
                         }}
                       >

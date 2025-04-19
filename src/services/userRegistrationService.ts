@@ -6,6 +6,7 @@ export interface UserRegistration {
   id: string;
   email: string;
   role: 'admin' | 'leader' | 'user';
+  real_name?: string; // Nome real do usuário
   first_name?: string;
   phone_number?: string;
   created_at?: string;
@@ -276,6 +277,7 @@ export const registerUser = async (
         id: userId,
         email: email,
         first_name: firstName,
+        real_name: firstName,
         phone_number: phoneNumber,
         role: 'user',
         created_at: new Date().toISOString(),
@@ -303,6 +305,7 @@ export const registerUser = async (
               id: userId,
               email: email,
               first_name: firstName,
+              real_name: firstName,
               phone_number: phoneNumber,
               role: 'user',
               created_at: new Date().toISOString(),
@@ -338,6 +341,7 @@ export const registerUser = async (
       id: userId,
       email: email,
       first_name: firstName,
+      real_name: firstName,
       phone_number: phoneNumber,
       role: 'user',
       created_at: new Date().toISOString(),

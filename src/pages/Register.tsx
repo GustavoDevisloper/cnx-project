@@ -258,13 +258,15 @@ export default function Register() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="firstName">Nome *</Label>
+                  <Label htmlFor="firstName">
+                    Nome Completo * <span className="text-xs text-muted-foreground">(será exibido nos contatos)</span>
+                  </Label>
                   <Input
                     id="firstName"
                     name="firstName"
                     type="text"
-                    autoComplete="given-name"
-                    placeholder="Seu nome"
+                    autoComplete="name"
+                    placeholder="Seu nome completo"
                     value={formData.firstName}
                     onChange={handleChange}
                     disabled={loading}
@@ -272,7 +274,7 @@ export default function Register() {
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="phoneNumber">Telefone *</Label>
+                  <Label htmlFor="phoneNumber">Telefone (WhatsApp) *</Label>
                   <Input
                     id="phoneNumber"
                     name="phoneNumber"

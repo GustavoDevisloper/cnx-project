@@ -15,6 +15,7 @@ export interface User {
   avatar_url?: string;
   created_at?: string;
   profile_views?: number;
+  last_login?: string;
 }
 
 // Login com email/senha via Supabase Auth
@@ -132,6 +133,20 @@ export async function signInWithEmail(email: string, password: string): Promise<
     localStorage.setItem('current_user_cache_time', new Date().getTime().toString());
     
     console.log(`✅ Login bem-sucedido para: ${email}`);
+    
+    // Atualizar a data do último login no banco de dados
+    try {
+      await supabase
+        .from('users')
+        .update({ last_login: new Date().toISOString() })
+        .eq('id', user.id);
+      
+      // Atualizar o objeto de usuário com o novo last_login
+      user.last_login = new Date().toISOString();
+      localStorage.setItem('current_user', JSON.stringify(user));
+    } catch (updateError) {
+      console.error('Erro ao atualizar data do último login:', updateError);
+    }
     
     // Exibir notificação de sucesso
     showSuccessNotification(
@@ -451,7 +466,8 @@ export const getCurrentUser = async (userId?: string): Promise<User | null> => {
         bio: data.bio,
         avatar_url: data.avatar_url,
         created_at: data.created_at,
-        profile_views: data.profile_views
+        profile_views: data.profile_views,
+        last_login: data.last_login
       };
       
       // Atualizar o cache

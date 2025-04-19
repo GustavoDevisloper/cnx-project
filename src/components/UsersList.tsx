@@ -24,7 +24,7 @@ import {
   TableHeader, 
   TableRow 
 } from "@/components/ui/table";
-import { BadgeCheck, Edit, Trash, UserPlus, ShieldAlert, Loader2 } from "lucide-react";
+import { BadgeCheck, Edit, Trash, UserPlus, ShieldAlert, Loader2, MessageSquare } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useNavigate } from "react-router-dom";
 
@@ -307,6 +307,33 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
     navigate(`/admin/users/${userId}`);
   };
 
+  const handleWhatsAppRedirect = (phoneNumber: string | undefined) => {
+    if (!phoneNumber) {
+      toast({
+        title: "Número não disponível",
+        description: "Este usuário não cadastrou um número de telefone",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Formatar o número (remover caracteres especiais e espaços)
+    const formattedNumber = phoneNumber.replace(/\D/g, "");
+    
+    // Verificar se o número está vazio após a formatação
+    if (!formattedNumber) {
+      toast({
+        title: "Número inválido",
+        description: "O formato do número de telefone não é válido",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Abrir URL do WhatsApp
+    window.open(`https://wa.me/${formattedNumber}`, '_blank');
+  };
+
   if (loading) {
     return (
       <div className="py-8 text-center">
@@ -329,36 +356,40 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
                 <p className="text-sm text-muted-foreground">Função: {user.role}</p>
               </div>
               
-              {(currentUserIsAdmin || (currentUserIsLeader && user.role !== 'admin')) && (
-                <div className="space-x-2">
-                  {user.role !== 'leader' && (
-                    <Button 
-                      variant="outline" 
-                      onClick={() => handleRoleChange(user.id, 'leader')}
-                    >
-                      Tornar Líder
-                    </Button>
-                  )}
-                  
-                  {currentUserIsAdmin && user.role !== 'admin' && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => handleRoleChange(user.id, 'admin')}
-                    >
-                      Tornar Admin
-                    </Button>
-                  )}
-                  
-                  {user.role !== 'user' && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => handleRoleChange(user.id, 'user')}
-                    >
-                      Remover Privilégios
-                    </Button>
-                  )}
-                </div>
-              )}
+              <div className="space-x-2">
+                {user.phone_number && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleWhatsAppRedirect(user.phone_number)}
+                  >
+                    <MessageSquare className="h-4 w-4 mr-2" />
+                    WhatsApp
+                  </Button>
+                )}
+                
+                {(currentUserIsAdmin || (currentUserIsLeader && user.role !== 'admin')) && (
+                  <>
+                    {currentUserIsAdmin && user.role !== 'admin' && (
+                      <Button 
+                        variant="outline"
+                        onClick={() => handleRoleChange(user.id, 'admin')}
+                      >
+                        Tornar Admin
+                      </Button>
+                    )}
+                    
+                    {user.role !== 'user' && (
+                      <Button 
+                        variant="outline"
+                        onClick={() => handleRoleChange(user.id, 'user')}
+                      >
+                        Remover Privilégios
+                      </Button>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           </Card>
         ))}
@@ -455,6 +486,7 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
               <TableRow>
                 <TableHead className="w-[250px]">Nome</TableHead>
                 <TableHead>Email</TableHead>
+                <TableHead>Telefone</TableHead>
                 <TableHead>Função</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -462,14 +494,14 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
             <TableBody>
               {loading ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">
+                  <TableCell colSpan={5} className="text-center">
                     <div className="w-8 h-8 border-4 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
                     <p>Carregando usuários...</p>
                   </TableCell>
                 </TableRow>
               ) : users.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={4} className="text-center">
+                  <TableCell colSpan={5} className="text-center">
                     <p>Nenhum usuário encontrado.</p>
                   </TableCell>
                 </TableRow>
@@ -482,6 +514,7 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
                   >
                     <TableCell className="font-medium">{user.username || user.email}</TableCell>
                     <TableCell>{user.email}</TableCell>
+                    <TableCell>{user.phone_number || "-"}</TableCell>
                     <TableCell>
                       <div className="flex items-center">
                         <Button
@@ -505,6 +538,17 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                        {user.phone_number && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); handleWhatsAppRedirect(user.phone_number); }}
+                            title="Enviar mensagem por WhatsApp"
+                          >
+                            <MessageSquare className="h-4 w-4" />
+                          </Button>
+                        )}
+                        
                         {currentUserIsAdmin && user.role !== 'admin' && (
                           <Button 
                             variant="outline" 
@@ -512,16 +556,6 @@ export default function UsersList({ filterRole, currentUserIsRoot = false }: Use
                             onClick={(e) => { e.stopPropagation(); handleRoleChange(user.id, 'admin'); }}
                           >
                             Tornar Admin
-                          </Button>
-                        )}
-                        
-                        {currentUserIsAdmin && user.role !== 'leader' && (
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={(e) => { e.stopPropagation(); handleRoleChange(user.id, 'leader'); }}
-                          >
-                            Tornar Líder
                           </Button>
                         )}
                         
