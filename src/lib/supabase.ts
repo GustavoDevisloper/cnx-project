@@ -4,13 +4,16 @@ import { Database } from './database.types'
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-console.log('🔧 Inicializando cliente Supabase...')
-console.log('URL configurada:', supabaseUrl ? 'Sim' : 'Não')
-console.log('🔑 Chave configurada:', supabaseAnonKey ? 'Sim' : 'Não')
+// Replace console logs with logger
+import { logger } from './utils'
+
+logger.log('🔧 Inicializando cliente Supabase...')
+logger.log('URL configurada:', supabaseUrl ? 'Sim' : 'Não')
+logger.log('🔑 Chave configurada:', supabaseAnonKey ? 'Sim' : 'Não')
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Variáveis de ambiente do Supabase não encontradas!')
-  console.error('Por favor, configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env')
+  logger.error('❌ Variáveis de ambiente do Supabase não encontradas!')
+  logger.error('Por favor, configure VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY no arquivo .env')
   throw new Error('Supabase URL and Anon Key são necessários.')
 }
 
@@ -28,7 +31,12 @@ function createCustomClient<T = Database>(
       detectSessionInUrl: false
     },
     global: {
-      headers: { 'x-client-info': 'supabase-js-web' }
+      headers: {
+        'x-client-info': 'supabase-js-web',
+        // Adicionar os headers Accept que garantem compatibilidade com postgREST
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
     },
     // Desabilitar completamente recursos em tempo real
     realtime: { enabled: false }
@@ -40,11 +48,43 @@ function createCustomClient<T = Database>(
   // Substituir métodos problemáticos com versões seguras
   const originalOnAuthStateChange = client.auth.onAuthStateChange
   client.auth.onAuthStateChange = (callback: any) => {
-    console.log('🔒 Usando versão segura de onAuthStateChange')
+    logger.log('🔒 Usando versão segura de onAuthStateChange')
     return {
       data: { subscription: { unsubscribe: () => {} } },
       error: null
     }
+  }
+
+  // Adicionar interceptor para tratar erros 406
+  const originalFrom = client.from
+  client.from = function(table: string) {
+    const query = originalFrom.call(this, table)
+    
+    // Substituir o método select original para adicionar tratamento de erros
+    const originalSelect = query.select
+    query.select = function(columns?: string) {
+      const selectQuery = originalSelect.call(this, columns)
+      
+      // Sobrescrever a versão original de single() para uma versão mais segura
+      const originalSingle = selectQuery.single
+      selectQuery.single = async function() {
+        try {
+          const result = await originalSingle.call(this)
+          return result
+        } catch (error: any) {
+          // Tratamento específico para erros 406
+          if (error?.status === 406 || (error?.message && error.message.includes('JSON object requested, multiple (or no) rows returned'))) {
+            logger.warn('⚠️ Erro 406 ao buscar dados: múltiplas ou nenhuma linha retornada')
+            return { data: null, error: { message: 'Nenhum resultado encontrado', code: '406', details: error?.message } }
+          }
+          return { data: null, error }
+        }
+      }
+      
+      return selectQuery
+    }
+    
+    return query
   }
 
   return client
@@ -54,7 +94,7 @@ function createCustomClient<T = Database>(
 export const supabase = createCustomClient<Database>(supabaseUrl, supabaseAnonKey)
 
 // Inicializar sem verificação de conexão
-console.log('✅ Cliente Supabase inicializado')
+logger.log('✅ Cliente Supabase inicializado')
 
 // Função para verificar autenticação de forma segura
 export const checkAuthStatus = async () => {
@@ -62,7 +102,7 @@ export const checkAuthStatus = async () => {
     const { data: { session }, error } = await supabase.auth.getSession()
     
     if (error) {
-      console.error('Erro ao verificar sessão:', error)
+      logger.error('Erro ao verificar sessão:', error)
       return false
     }
     
@@ -75,7 +115,7 @@ export const checkAuthStatus = async () => {
       return false
     }
   } catch (e) {
-    console.warn('⚠️ Erro ao verificar status de autenticação:', e)
+    logger.warn('⚠️ Erro ao verificar status de autenticação:', e)
     return false
   }
 }
@@ -114,24 +154,25 @@ export const checkSupabaseConnectivity = async (retryCount = 1): Promise<boolean
         method: 'HEAD',
         headers: {
           'apikey': supabase.supabaseKey,
+          'Accept': 'application/json'
         },
         // Definir um timeout curto para evitar esperas longas
         signal: AbortSignal.timeout(3000)
       });
       
       if (response.ok) {
-        console.log("✅ Serviço Supabase disponível via fetch");
+        logger.log("✅ Serviço Supabase disponível via fetch");
         // Armazenar resultado positivo em cache
         localStorage.setItem('supabase_connectivity_cache', 'true');
         localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
         return true;
       }
     } catch (e: any) {
-      console.warn("⚠️ Primeiro teste de conectividade falhou:", e.name);
+      logger.warn("⚠️ Primeiro teste de conectividade falhou:", e.name);
       
       // Verificar especificamente o erro ERR_NAME_NOT_RESOLVED
       if (e.message && e.message.includes('ERR_NAME_NOT_RESOLVED')) {
-        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        logger.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
         // Armazenar resultado negativo em cache
         localStorage.setItem('supabase_connectivity_cache', 'false');
         localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
@@ -148,24 +189,24 @@ export const checkSupabaseConnectivity = async (retryCount = 1): Promise<boolean
         .maybeSingle();
       
       if (!error) {
-        console.log("✅ Serviço Supabase disponível via SDK");
+        logger.log("✅ Serviço Supabase disponível via SDK");
         // Armazenar resultado positivo em cache
         localStorage.setItem('supabase_connectivity_cache', 'true');
         localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
         return true;
       } else if (error.message && error.message.includes('ERR_NAME_NOT_RESOLVED')) {
-        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        logger.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
         // Armazenar resultado negativo em cache
         localStorage.setItem('supabase_connectivity_cache', 'false');
         localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
         return false;
       }
     } catch (e: any) {
-      console.warn("⚠️ Segundo teste de conectividade falhou:", e);
+      logger.warn("⚠️ Segundo teste de conectividade falhou:", e);
       
       // Verificar especificamente o erro ERR_NAME_NOT_RESOLVED
       if (e.message && e.message.includes('ERR_NAME_NOT_RESOLVED')) {
-        console.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
+        logger.error("❌ Erro de resolução DNS (ERR_NAME_NOT_RESOLVED) - domínio do Supabase não pôde ser resolvido");
         // Armazenar resultado negativo em cache
         localStorage.setItem('supabase_connectivity_cache', 'false');
         localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
@@ -175,19 +216,19 @@ export const checkSupabaseConnectivity = async (retryCount = 1): Promise<boolean
     
     // Se todas as tentativas falharam e ainda temos tentativas disponíveis, tentar novamente
     if (retryCount > 0) {
-      console.log(`🔄 Tentando novamente verificar conectividade (${retryCount} tentativas restantes)...`);
+      logger.log(`🔄 Tentando novamente verificar conectividade (${retryCount} tentativas restantes)...`);
       // Esperar 1 segundo antes de tentar novamente
       await new Promise(resolve => setTimeout(resolve, 1000));
       return checkSupabaseConnectivity(retryCount - 1);
     }
     
-    console.error("❌ Serviço Supabase não está acessível após múltiplas tentativas");
+    logger.error("❌ Serviço Supabase não está acessível após múltiplas tentativas");
     // Armazenar resultado negativo em cache
     localStorage.setItem('supabase_connectivity_cache', 'false');
     localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());
     return false;
   } catch (e) {
-    console.error("❌ Erro ao verificar conectividade com Supabase:", e);
+    logger.error("❌ Erro ao verificar conectividade com Supabase:", e);
     // Armazenar resultado negativo em cache
     localStorage.setItem('supabase_connectivity_cache', 'false');
     localStorage.setItem('supabase_connectivity_timestamp', Date.now().toString());

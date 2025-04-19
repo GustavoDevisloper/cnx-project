@@ -7,7 +7,6 @@ export interface UserRegistration {
   id: string;
   email: string;
   role: 'admin' | 'leader' | 'user';
-  real_name?: string; // Nome real do usuário
   first_name?: string;
   phone_number?: string;
   created_at?: string;
@@ -24,11 +23,12 @@ const checkUserExists = async (email: string): Promise<boolean> => {
       .from('users')
       .select('id')
       .eq('email', email)
-      .single();
+      .maybeSingle(); // Usar maybeSingle() em vez de single() para evitar erro 406
 
     if (error) {
-      if (error.code === 'PGRST116') {
-        // Usuário não encontrado
+      if (error.code === 'PGRST116' || error.code === '406' || error.status === 406) {
+        // Usuário não encontrado ou erro 406 (múltiplas ou nenhuma linha)
+        logger.warn('Usuário não encontrado ou erro 406 ao verificar existência:', email);
         return false;
       }
       throw error;
@@ -271,57 +271,106 @@ export const registerUser = async (
     // 3. Gerar um username baseado no firstName para evitar conflitos
     const generatedUsername = `${firstName.toLowerCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 10000)}`;
 
-    // 4. Criar o perfil do usuário diretamente na tabela users
-    let { data: userData, error: userError } = await supabase
-      .from('users')
-      .insert({
-        id: userId,
-        email: email,
-        first_name: firstName,
-        real_name: firstName,
-        phone_number: phoneNumber,
-        role: 'user',
-        created_at: new Date().toISOString(),
-        password_hash: await hashPassword(password),
-        username: generatedUsername // Usar username gerado para evitar conflitos
-      })
-      .select('*')
-      .single();
+    // Preparar os dados do usuário, removendo campos que podem não existir na tabela
+    const userData = {
+      id: userId,
+      email: email,
+      first_name: firstName,
+      phone_number: phoneNumber,
+      role: 'user',
+      created_at: new Date().toISOString(),
+      password_hash: await hashPassword(password),
+      username: generatedUsername
+    };
 
+    // Verificar se a tabela tem a estrutura esperada antes de inserir
+    try {
+      // Testar se podemos obter a estrutura da tabela
+      const { error: structureError } = await supabase
+        .from('users')
+        .select('id')
+        .limit(1);
+
+      if (structureError) {
+        logger.error('❌ Erro ao verificar estrutura da tabela:', structureError);
+        throw new Error('Erro na estrutura da tabela de usuários');
+      }
+    } catch (structError) {
+      logger.error('❌ Erro ao verificar estrutura da tabela:', structError);
+    }
+
+    // 4. Criar o perfil do usuário diretamente na tabela users
+    let { data: createdUser, error: userError } = await supabase
+      .from('users')
+      .insert(userData)
+      .select('*')
+      .maybeSingle(); // Usar maybeSingle para evitar erro 406
+
+    // Verificar se houve erro na inserção
     if (userError) {
       logger.error('❌ Erro ao criar usuário:', userError);
       
-      // Verificar se é outro tipo de erro
-      if (userError.code === '23505') {
+      // Verificar se é um erro de coluna não encontrada
+      if (userError.code === 'PGRST204' || (userError.message && userError.message.includes('column'))) {
+        logger.warn('⚠️ Erro de coluna não encontrada, tentando sem o campo problemático');
+        
+        // Remover campos problemáticos e tentar novamente
+        // Verificar qual coluna está causando o problema
+        if (userError.message && userError.message.includes('real_name')) {
+          delete userData['real_name']; // Remover campo real_name
+        }
+        
+        // Tentar novamente sem os campos problemáticos
+        const { data: retryData, error: retryError } = await supabase
+          .from('users')
+          .insert(userData)
+          .select('*')
+          .maybeSingle();
+          
+        if (retryError) {
+          logger.error('❌ Erro na segunda tentativa:', retryError);
+          throw new Error('Não foi possível criar sua conta. Por favor, tente novamente mais tarde.');
+        }
+        
+        createdUser = retryData;
+      }
+      // Verificar se é erro 406 (nenhum resultado ou múltiplos resultados)
+      else if (userError.code === '406' || userError.status === 406) {
+        // Tenta verificar se o usuário foi criado apesar do erro 406
+        const checkUser = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
+          
+        if (checkUser.data) {
+          logger.log('✅ Usuário criado apesar do erro 406, continuando...');
+          createdUser = checkUser.data;
+        } else {
+          throw new Error('Não foi possível criar sua conta (erro 406). Por favor, tente novamente mais tarde.');
+        }
+      }
+      // Verificar se é erro de chave duplicada
+      else if (userError.code === '23505') {
         // Se for erro de chave duplicada, verificar qual campo está causando o problema
-        if (userError.message.includes('email')) {
+        if (userError.message?.includes('email')) {
           throw new Error('Este e-mail já está sendo usado por outra conta.');
-        } else if (userError.message.includes('username')) {
+        } else if (userError.message?.includes('username')) {
           // Tentar novamente com outro username
-          const newUsername = `${firstName.toLowerCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 100000)}`;
+          userData.username = `${firstName.toLowerCase().replace(/\s+/g, '_')}_${Math.floor(Math.random() * 100000)}`;
           
           const { data: retryData, error: retryError } = await supabase
             .from('users')
-            .insert({
-              id: userId,
-              email: email,
-              first_name: firstName,
-              real_name: firstName,
-              phone_number: phoneNumber,
-              role: 'user',
-              created_at: new Date().toISOString(),
-              password_hash: await hashPassword(password),
-              username: newUsername
-            })
+            .insert(userData)
             .select('*')
-            .single();
+            .maybeSingle(); // Usar maybeSingle para evitar erro 406
             
           if (retryError) {
             logger.error('❌ Erro na segunda tentativa:', retryError);
             throw new Error('Não foi possível criar sua conta. Por favor, tente novamente mais tarde.');
           }
           
-          userData = retryData;
+          createdUser = retryData;
         } else {
           // Outro tipo de erro de chave duplicada
           throw new Error('Não foi possível criar sua conta. Por favor, tente novamente mais tarde.');
@@ -331,7 +380,12 @@ export const registerUser = async (
       }
     }
 
-    logger.log('📦 Usuário criado com sucesso:', userData);
+    // Verificar se temos dados do usuário
+    if (!createdUser) {
+      throw new Error('Não foi possível obter os dados da conta criada. Por favor, faça login.');
+    }
+
+    logger.log('📦 Usuário criado com sucesso:', createdUser);
 
     // 5. Armazenar informações do usuário para "login" manual
     localStorage.setItem('current_user_id', userId);
@@ -342,11 +396,10 @@ export const registerUser = async (
       id: userId,
       email: email,
       first_name: firstName,
-      real_name: firstName,
       phone_number: phoneNumber,
       role: 'user',
       created_at: new Date().toISOString(),
-      username: userData.username
+      username: createdUser.username
     };
 
     logger.log('✅ Perfil criado com sucesso:', userProfile);
@@ -388,10 +441,17 @@ export const manualLogin = async (email: string, password: string): Promise<User
       .from('users')
       .select('*')
       .eq('email', email)
-      .single();
+      .maybeSingle(); // Usar maybeSingle em vez de single para evitar erro 406
 
-    if (error || !user) {
-      logger.error('❌ Usuário não encontrado:', error);
+    // Verificar erro 406 ou nenhum usuário encontrado
+    if ((error && (error.code === '406' || error.status === 406)) || !user) {
+      logger.error('❌ Usuário não encontrado ou erro 406:', error);
+      throw new Error('Email ou senha incorretos.');
+    }
+    
+    // Verificar qualquer outro erro
+    if (error) {
+      logger.error('❌ Erro ao buscar usuário:', error);
       throw new Error('Email ou senha incorretos.');
     }
 
