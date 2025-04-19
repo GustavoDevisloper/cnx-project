@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { v4 as uuidv4 } from 'uuid';
+import { logger } from '../lib/utils';
 
 // Tipo para usuário
 export interface UserRegistration {
@@ -35,7 +36,7 @@ const checkUserExists = async (email: string): Promise<boolean> => {
 
     return !!existingUser;
   } catch (error) {
-    console.error('Erro ao verificar existência do usuário:', error);
+    logger.error('Erro ao verificar existência do usuário:', error);
     return false;
   }
 };
@@ -56,7 +57,7 @@ export const syncCurrentUser = async (): Promise<boolean> => {
       const userEmail = session.user.email;
       
       if (!userEmail) {
-        console.log('Email de usuário não disponível para sincronizar');
+        logger.log('Email de usuário não disponível para sincronizar');
         return false;
       }
       
@@ -71,7 +72,7 @@ export const syncCurrentUser = async (): Promise<boolean> => {
         if (userError) {
           // Verificar se é um erro de recursão RLS
           if (userError.message?.includes('infinite recursion')) {
-            console.warn('⚠️ Erro de recursão RLS - tentando método alternativo...');
+            logger.warn('⚠️ Erro de recursão RLS - tentando método alternativo...');
             
             // Tentar criar/atualizar o usuário usando método alternativo (se possível)
             // Por exemplo, usando RPC ou inserção direta sem RLS
@@ -82,24 +83,24 @@ export const syncCurrentUser = async (): Promise<boolean> => {
               });
               
               if (!rpcError && rpcResult) {
-                console.log('✅ Usuário sincronizado via RPC');
+                logger.log('✅ Usuário sincronizado via RPC');
                 return true;
               }
             } catch (rpcError) {
-              console.log('Função RPC não disponível, continuando com fallback...');
+              logger.log('Função RPC não disponível, continuando com fallback...');
             }
             
             // Se falhou, podemos assumir que o usuário já existe ou não podemos sincronizar devido ao RLS
             // Vamos usar os dados em localStorage como fallback
             return handleLocalStorageFallback(userId, userEmail);
           } else if (userError.code !== 'PGRST116') {
-            console.error('Erro ao verificar usuário existente:', userError);
+            logger.error('Erro ao verificar usuário existente:', userError);
             return false;
           }
         }
         
         if (existingUser) {
-          console.log('Usuário já existe na tabela public.users');
+          logger.log('Usuário já existe na tabela public.users');
           return true;
         }
         
@@ -122,38 +123,38 @@ export const syncCurrentUser = async (): Promise<boolean> => {
         
         if (insertError) {
           if (insertError.message?.includes('infinite recursion')) {
-            console.warn('⚠️ Erro de recursão RLS ao inserir usuário - usando método alternativo');
+            logger.warn('⚠️ Erro de recursão RLS ao inserir usuário - usando método alternativo');
             return handleLocalStorageFallback(userId, userEmail);
           }
           
-          console.error('Erro ao inserir usuário na tabela public.users:', insertError);
+          logger.error('Erro ao inserir usuário na tabela public.users:', insertError);
           return false;
         }
         
-        console.log('Usuário sincronizado com sucesso:', insertedUser);
+        logger.log('Usuário sincronizado com sucesso:', insertedUser);
         return true;
       } catch (error) {
-        console.error('Erro ao sincronizar usuário com Supabase Auth:', error);
+        logger.error('Erro ao sincronizar usuário com Supabase Auth:', error);
         return handleLocalStorageFallback(userId, userEmail);
       }
     } 
     // Se não temos sessão Supabase, verificar localStorage
     else {
-      console.log('Nenhuma sessão Supabase ativa, verificando localStorage...');
+      logger.log('Nenhuma sessão Supabase ativa, verificando localStorage...');
       
       // Verificar se temos dados do usuário no localStorage
       const userId = localStorage.getItem('current_user_id');
       const userEmail = localStorage.getItem('current_user_email');
       
       if (!userId || !userEmail) {
-        console.log('Dados insuficientes no localStorage para sincronizar');
+        logger.log('Dados insuficientes no localStorage para sincronizar');
         return false;
       }
       
       return handleLocalStorageFallback(userId, userEmail);
     }
   } catch (error) {
-    console.error('Erro ao sincronizar usuário:', error);
+    logger.error('Erro ao sincronizar usuário:', error);
     return false;
   }
 };
@@ -166,7 +167,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
   const userDataStr = localStorage.getItem('current_user');
   
   if (!userDataStr) {
-    console.log('Dados insuficientes no localStorage para criar usuário completo');
+    logger.log('Dados insuficientes no localStorage para criar usuário completo');
     
     // Se não temos dados completos, tente criar um registro mínimo
     try {
@@ -182,7 +183,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
         });
         
         if (!rpcError && rpcResult) {
-          console.log('✅ Usuário mínimo sincronizado via RPC');
+          logger.log('✅ Usuário mínimo sincronizado via RPC');
           return true;
         }
       } catch (rpcError) {
@@ -190,7 +191,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
       }
       
       // Como último recurso, apenas considere o usuário sincronizado para evitar erros repetidos
-      console.log('⚠️ Usando sincronização simulada para evitar erros repetidos');
+      logger.log('⚠️ Usando sincronização simulada para evitar erros repetidos');
       
       // Armazenar um registro indicando que tentamos sincronizar
       localStorage.setItem('user_sync_attempted', 'true');
@@ -198,7 +199,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
       
       return true;
     } catch (error) {
-      console.error('Erro ao criar usuário mínimo:', error);
+      logger.error('Erro ao criar usuário mínimo:', error);
       return false;
     }
   }
@@ -214,7 +215,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
       const fiveMinutesAgo = Date.now() - 5 * 60 * 1000;
       
       if (lastSyncTime > fiveMinutesAgo) {
-        console.log('Sincronização recente tentada, ignorando para evitar spam de erros');
+        logger.log('Sincronização recente tentada, ignorando para evitar spam de erros');
         return true;
       }
     }
@@ -226,7 +227,7 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
       });
       
       if (!rpcError && rpcResult) {
-        console.log('✅ Usuário completo sincronizado via RPC');
+        logger.log('✅ Usuário completo sincronizado via RPC');
         return true;
       }
     } catch (rpcError) {
@@ -237,10 +238,10 @@ const handleLocalStorageFallback = async (userId: string, userEmail: string): Pr
     localStorage.setItem('user_sync_attempted', 'true');
     localStorage.setItem('user_sync_timestamp', new Date().toISOString());
     
-    console.log('✅ Simulando sincronização bem-sucedida para evitar erros repetidos');
+    logger.log('✅ Simulando sincronização bem-sucedida para evitar erros repetidos');
     return true;
   } catch (e) {
-    console.error('Erro ao processar dados do usuário do localStorage:', e);
+    logger.error('Erro ao processar dados do usuário do localStorage:', e);
     return false;
   }
 };
@@ -254,13 +255,13 @@ export const registerUser = async (
   firstName: string,
   phoneNumber: string
 ): Promise<UserRegistration | null> => {
-  console.log('🚀 Iniciando processo de registro simplificado');
-
   try {
+    logger.log('🚀 Iniciando processo de registro simplificado');
+
     // 1. Verificar se o e-mail já está em uso
     const userExists = await checkUserExists(email);
     if (userExists) {
-      console.warn('⚠️ E-mail já registrado:', email);
+      logger.warn('⚠️ E-mail já registrado:', email);
       throw new Error('Este e-mail já está registrado. Por favor, tente outro ou faça login.');
     }
 
@@ -288,7 +289,7 @@ export const registerUser = async (
       .single();
 
     if (userError) {
-      console.error('❌ Erro ao criar usuário:', userError);
+      logger.error('❌ Erro ao criar usuário:', userError);
       
       // Verificar se é outro tipo de erro
       if (userError.code === '23505') {
@@ -316,7 +317,7 @@ export const registerUser = async (
             .single();
             
           if (retryError) {
-            console.error('❌ Erro na segunda tentativa:', retryError);
+            logger.error('❌ Erro na segunda tentativa:', retryError);
             throw new Error('Não foi possível criar sua conta. Por favor, tente novamente mais tarde.');
           }
           
@@ -330,7 +331,7 @@ export const registerUser = async (
       }
     }
 
-    console.log('📦 Usuário criado com sucesso:', userData);
+    logger.log('📦 Usuário criado com sucesso:', userData);
 
     // 5. Armazenar informações do usuário para "login" manual
     localStorage.setItem('current_user_id', userId);
@@ -348,11 +349,11 @@ export const registerUser = async (
       username: userData.username
     };
 
-    console.log('✅ Perfil criado com sucesso:', userProfile);
+    logger.log('✅ Perfil criado com sucesso:', userProfile);
     return userProfile;
 
   } catch (error: any) {
-    console.error('❌ Erro fatal no processo de registro:', error);
+    logger.error('❌ Erro fatal no processo de registro:', error);
     throw error;
   }
 };
@@ -376,7 +377,7 @@ const hashPassword = async (password: string): Promise<string> => {
  */
 export const manualLogin = async (email: string, password: string): Promise<UserRegistration | null> => {
   try {
-    console.log(`🔒 Tentando login manual: ${email}`);
+    logger.log(`🔒 Tentando login manual: ${email}`);
     
     // Limpar quaisquer dados de usuário temporário que possam estar causando conflitos
     const tempUserKey = 'temp_user_' + email.replace('@', '_at_');
@@ -390,14 +391,14 @@ export const manualLogin = async (email: string, password: string): Promise<User
       .single();
 
     if (error || !user) {
-      console.error('❌ Usuário não encontrado:', error);
+      logger.error('❌ Usuário não encontrado:', error);
       throw new Error('Email ou senha incorretos.');
     }
 
     // 2. Verificar a senha
     const hashedPassword = await hashPassword(password);
     if (hashedPassword !== user.password_hash) {
-      console.error('❌ Senha incorreta');
+      logger.error('❌ Senha incorreta');
       throw new Error('Email ou senha incorretos.');
     }
 
@@ -420,14 +421,14 @@ export const manualLogin = async (email: string, password: string): Promise<User
       username: user.username
     };
     
-    console.log(`✅ Login bem-sucedido para ${email} (${user.role})`);
+    logger.log(`✅ Login bem-sucedido para ${email} (${user.role})`);
     
     // Disparar evento de mudança no estado de autenticação
     window.dispatchEvent(new Event('auth-state-changed'));
 
     return userProfile;
   } catch (error) {
-    console.error('❌ Erro no login:', error);
+    logger.error('❌ Erro no login:', error);
     throw error;
   }
 };
@@ -448,5 +449,5 @@ export const finalizeRegistration = (user: UserRegistration): void => {
   // Disparar evento de mudança no estado de autenticação
   window.dispatchEvent(new Event('auth-state-changed'));
   
-  console.log('✅ Registro finalizado com sucesso');
+  logger.log('✅ Registro finalizado com sucesso');
 }; 

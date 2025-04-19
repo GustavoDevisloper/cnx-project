@@ -1,5 +1,6 @@
 import { supabase } from '@/services/supabaseClient';
 import { toast } from '@/hooks/use-toast';
+import { logger } from '../lib/utils';
 
 // Lista de buckets possíveis para tentar
 const BUCKET_NAMES = ['avatars', 'profile', 'public', 'profiles', 'users'];
@@ -13,52 +14,52 @@ const BUCKET_NAMES = ['avatars', 'profile', 'public', 'profiles', 'users'];
  */
 export const getAvailableBucket = async (): Promise<string | null> => {
   try {
-    console.log('Verificando buckets disponíveis...');
+    logger.log('Verificando buckets disponíveis...');
     
     // Tentar listar buckets primeiro
     try {
       const { data: buckets, error } = await supabase.storage.listBuckets();
       
       if (!error && buckets && buckets.length > 0) {
-        console.log('Buckets encontrados:', buckets.map(b => b.name).join(', '));
+        logger.log('Buckets encontrados:', buckets.map(b => b.name).join(', '));
         
         // Verificar se algum dos buckets preferidos existe
         for (const bucketName of BUCKET_NAMES) {
           if (buckets.some(b => b.name === bucketName)) {
-            console.log(`Usando bucket existente: ${bucketName}`);
+            logger.log(`Usando bucket existente: ${bucketName}`);
             return bucketName;
           }
         }
         
         // Se nenhum dos preferidos existir, usar o primeiro disponível
-        console.log(`Usando primeiro bucket disponível: ${buckets[0].name}`);
+        logger.log(`Usando primeiro bucket disponível: ${buckets[0].name}`);
         return buckets[0].name;
       }
     } catch (e) {
-      console.error('Erro ao listar buckets:', e);
+      logger.error('Erro ao listar buckets:', e);
     }
     
     // Se não conseguir listar, tentar verificar cada bucket individualmente
     for (const bucketName of BUCKET_NAMES) {
       try {
-        console.log(`Tentando acessar bucket ${bucketName}...`);
+        logger.log(`Tentando acessar bucket ${bucketName}...`);
         const { data, error } = await supabase.storage
           .from(bucketName)
           .list('', { limit: 1 });
           
         if (!error) {
-          console.log(`Bucket ${bucketName} está acessível!`);
+          logger.log(`Bucket ${bucketName} está acessível!`);
           return bucketName;
         }
       } catch (e) {
-        console.log(`Bucket ${bucketName} não acessível`);
+        logger.log(`Bucket ${bucketName} não acessível`);
       }
     }
     
-    console.error('Nenhum bucket disponível');
+    logger.error('Nenhum bucket disponível');
     return null;
   } catch (e) {
-    console.error('Erro ao verificar buckets:', e);
+    logger.error('Erro ao verificar buckets:', e);
     return null;
   }
 };
@@ -68,7 +69,7 @@ export const getAvailableBucket = async (): Promise<string | null> => {
  */
 export const createStorageBucket = async (bucketName: string): Promise<boolean> => {
   try {
-    console.log(`Tentando criar bucket ${bucketName}...`);
+    logger.log(`Tentando criar bucket ${bucketName}...`);
     
     const { data, error } = await supabase.storage.createBucket(bucketName, {
       public: true,
@@ -76,7 +77,7 @@ export const createStorageBucket = async (bucketName: string): Promise<boolean> 
     });
     
     if (error) {
-      console.error(`Erro ao criar bucket ${bucketName}:`, error);
+      logger.error(`Erro ao criar bucket ${bucketName}:`, error);
       
       if (error.message?.includes('security policy')) {
         toast({
@@ -89,10 +90,10 @@ export const createStorageBucket = async (bucketName: string): Promise<boolean> 
       return false;
     }
     
-    console.log(`Bucket ${bucketName} criado com sucesso!`);
+    logger.log(`Bucket ${bucketName} criado com sucesso!`);
     return true;
   } catch (e) {
-    console.error(`Erro ao criar bucket ${bucketName}:`, e);
+    logger.error(`Erro ao criar bucket ${bucketName}:`, e);
     return false;
   }
 };
@@ -251,7 +252,7 @@ export const fileToBase64 = async (
           
           // Se ainda estiver muito grande, reduzir ainda mais
           if (base64.length > 60000) {
-            console.log('Reduzindo qualidade da imagem para garantir compatibilidade');
+            logger.log('Reduzindo qualidade da imagem para garantir compatibilidade');
             // Reduzir mais o tamanho, mas mantendo resolução razoável
             canvas.width = Math.round(width * 0.9);
             canvas.height = Math.round(height * 0.9);
@@ -263,7 +264,7 @@ export const fileToBase64 = async (
             base64 = canvas.toDataURL('image/jpeg', 0.6);
           }
           
-          console.log(`Imagem convertida para base64: ${base64.length} caracteres`);
+          logger.log(`Imagem convertida para base64: ${base64.length} caracteres`);
           
           resolve(base64);
         };
@@ -282,7 +283,7 @@ export const fileToBase64 = async (
       reader.readAsDataURL(file);
     });
   } catch (error) {
-    console.error('Erro ao converter arquivo para base64:', error);
+    logger.error('Erro ao converter arquivo para base64:', error);
     throw error;
   }
 };
@@ -329,7 +330,7 @@ export const uploadImage = async (
         variant: 'warning'
       });
       
-      console.log('Convertendo para base64 como alternativa...');
+      logger.log('Convertendo para base64 como alternativa...');
       return await fileToBase64(file);
     }
     
@@ -337,7 +338,7 @@ export const uploadImage = async (
     const timestamp = new Date().getTime();
     const filePath = `${path}/${userId}_${timestamp}.${fileExt}`;
     
-    console.log(`Fazendo upload para ${bucketName}/${filePath}`);
+    logger.log(`Fazendo upload para ${bucketName}/${filePath}`);
     
     // Tentar fazer upload
     const { data, error } = await supabase.storage
@@ -348,7 +349,7 @@ export const uploadImage = async (
       });
       
     if (error) {
-      console.error('Erro ao fazer upload:', error);
+      logger.error('Erro ao fazer upload:', error);
       
       // Se for erro de política de segurança ou permissão
       if (error.message?.includes('security policy') || error.message?.includes('permission') || error.statusCode === '403') {
@@ -359,7 +360,7 @@ export const uploadImage = async (
         });
         
         // Tentar alternativa com base64
-        console.log('Convertendo para base64 como alternativa...');
+        logger.log('Convertendo para base64 como alternativa...');
         return await fileToBase64(file);
       }
       
@@ -372,7 +373,7 @@ export const uploadImage = async (
         });
         
         // Tentar alternativa com base64
-        console.log('Convertendo para base64 como alternativa...');
+        logger.log('Convertendo para base64 como alternativa...');
         return await fileToBase64(file);
       }
       
@@ -391,23 +392,23 @@ export const uploadImage = async (
       .getPublicUrl(filePath);
       
     if (!urlData?.publicUrl) {
-      console.error('Não foi possível obter URL pública');
+      logger.error('Não foi possível obter URL pública');
       
       // Tentar alternativa com base64
       return await fileToBase64(file);
     }
     
-    console.log('Upload concluído com sucesso:', urlData.publicUrl);
+    logger.log('Upload concluído com sucesso:', urlData.publicUrl);
     return urlData.publicUrl;
   } catch (e) {
-    console.error('Erro inesperado ao fazer upload:', e);
+    logger.error('Erro inesperado ao fazer upload:', e);
     
     // Em caso de erro, tentar converter para base64
     try {
-      console.log('Tentando alternativa com base64...');
+      logger.log('Tentando alternativa com base64...');
       return await fileToBase64(file);
     } catch (base64Error) {
-      console.error('Erro ao converter para base64:', base64Error);
+      logger.error('Erro ao converter para base64:', base64Error);
       return null;
     }
   }
