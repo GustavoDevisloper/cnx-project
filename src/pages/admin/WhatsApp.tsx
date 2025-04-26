@@ -105,18 +105,18 @@ const WhatsAppPage: React.FC = () => {
   }, []);
 
   return (
-    <div className="container p-4">
-      <Title className="mb-2">Gerenciamento de WhatsApp</Title>
-      <Subtitle className="mb-6">Envie e agende mensagens para os usuários da plataforma</Subtitle>
+    <div className="container p-2 sm:p-4">
+      <Title className="mb-2 text-xl sm:text-2xl">Gerenciamento de WhatsApp</Title>
+      <Subtitle className="mb-4 sm:mb-6 text-sm sm:text-base">Envie e agende mensagens para os usuários da plataforma</Subtitle>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         <div className="col-span-1">
           <WhatsappBotStatus />
         </div>
         
-        <div className="col-span-1 md:col-span-2">
+        <div className="col-span-1 lg:col-span-2">
           <TabGroup index={activeTab} onIndexChange={setActiveTab}>
-            <TabList className="mb-4">
+            <TabList className="mb-4 overflow-x-auto flex whitespace-nowrap">
               <Tab>Contatos</Tab>
               {selectedContact && <Tab>Configurar Mensagem</Tab>}
             </TabList>
@@ -124,7 +124,7 @@ const WhatsAppPage: React.FC = () => {
             <TabPanels>              
               <TabPanel>
                 <Card>
-                  <div className="flex justify-between items-center mb-4">
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
                     <Text className="font-medium text-tremor-content-strong dark:text-dark-tremor-content-strong">
                       Lista de Contatos ({contacts.length})
                     </Text>
@@ -149,46 +149,52 @@ const WhatsAppPage: React.FC = () => {
                       <Text className="mt-2 text-sm text-gray-500">Verifique se os usuários possuem números de telefone cadastrados</Text>
                     </div>
                   ) : (
-                    <Table>
-                      <TableHead>
-                        <TableRow>
-                          <TableHeaderCell>Nome Real</TableHeaderCell>
-                          <TableHeaderCell>Exibição</TableHeaderCell>
-                          <TableHeaderCell>Telefone</TableHeaderCell>
-                          <TableHeaderCell>Ações</TableHeaderCell>
-                        </TableRow>
-                      </TableHead>
-                      <TableBody>
-                        {contacts.map((contact) => (
-                          <TableRow key={contact.id}>
-                            <TableCell>{contact.first_name}</TableCell>
-                            <TableCell>{contact.display_name}</TableCell>
-                            <TableCell>{contact.phone}</TableCell>
-                            <TableCell className="flex space-x-2">
-                              <Button
-                                size="xs"
-                                variant="light"
-                                icon={MessageSquare}
-                                onClick={() => handleSelectContact(contact.phone, contact.first_name || contact.display_name)}
-                                disabled={!contact.phone}
-                              >
-                                Configurar
-                              </Button>
-                              <Button
-                                size="xs"
-                                variant="primary"
-                                color="green"
-                                icon={ExternalLink}
-                                onClick={() => handleDirectWhatsApp(contact.phone, contact.first_name || contact.display_name)}
-                                disabled={!contact.phone}
-                              >
-                                Enviar
-                              </Button>
-                            </TableCell>
+                    <div className="overflow-x-auto -mx-4 sm:mx-0">
+                      <Table>
+                        <TableHead>
+                          <TableRow>
+                            <TableHeaderCell className="whitespace-nowrap">Nome</TableHeaderCell>
+                            <TableHeaderCell className="whitespace-nowrap hidden sm:table-cell">Exibição</TableHeaderCell>
+                            <TableHeaderCell className="whitespace-nowrap">Telefone</TableHeaderCell>
+                            <TableHeaderCell className="whitespace-nowrap">Ações</TableHeaderCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                        </TableHead>
+                        <TableBody>
+                          {contacts.map((contact) => (
+                            <TableRow key={contact.id}>
+                              <TableCell className="whitespace-nowrap">{contact.first_name}</TableCell>
+                              <TableCell className="whitespace-nowrap hidden sm:table-cell">{contact.display_name}</TableCell>
+                              <TableCell className="whitespace-nowrap text-xs sm:text-sm">{contact.phone}</TableCell>
+                              <TableCell className="whitespace-nowrap">
+                                <div className="flex flex-col sm:flex-row gap-1 sm:gap-2">
+                                  <Button
+                                    size="xs"
+                                    variant="light"
+                                    icon={MessageSquare}
+                                    onClick={() => handleSelectContact(contact.phone, contact.first_name || contact.display_name)}
+                                    disabled={!contact.phone}
+                                    className="text-xs px-1 py-1 sm:px-2"
+                                  >
+                                    <span className="hidden sm:inline">Configurar</span>
+                                  </Button>
+                                  <Button
+                                    size="xs"
+                                    variant="primary"
+                                    color="green"
+                                    icon={ExternalLink}
+                                    onClick={() => handleDirectWhatsApp(contact.phone, contact.first_name || contact.display_name)}
+                                    disabled={!contact.phone}
+                                    className="text-xs px-1 py-1 sm:px-2"
+                                  >
+                                    <span className="hidden sm:inline">Enviar</span>
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
                   )}
                 </Card>
               </TabPanel>

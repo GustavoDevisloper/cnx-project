@@ -8,9 +8,8 @@ import {
   getEventById, 
   getAttendanceForUser
 } from '@/services/eventService';
-import { getItemsByAttendance, addItem, getEventItemsWithUserInfo } from '@/services/eventItemService';
 import { getMessagesByEvent, sendMessage, subscribeToEventMessages } from '@/services/eventMessageService';
-import { EventWithAttendees, EventItem, EventMessage, EventItemFormInput, EventMessageFormInput, EventItemSummary } from '@/types/event';
+import { EventWithAttendees, EventMessage, EventMessageFormInput } from '@/types/event';
 
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -22,7 +21,7 @@ import {
   CheckIcon,
   XIcon,
   SendIcon,
-  PlusIcon
+  User
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -36,7 +35,6 @@ import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { EventsDatabaseFix } from '@/components/EventsDatabaseFix';
-import { EventItemsList } from '@/components/EventItemsList';
 import { toast } from '@/hooks/use-toast';
 import { EventChat } from '@/components/EventChat';
 
@@ -51,11 +49,7 @@ const EventDetailPage: React.FC = () => {
   
   const [attendanceStatus, setAttendanceStatus] = useState<string | null>(null);
   const [attendanceId, setAttendanceId] = useState<string | null>(null);
-  const [items, setItems] = useState<EventItem[]>([]);
-  const [allEventItems, setAllEventItems] = useState<EventItemSummary[]>([]);
   const [messages, setMessages] = useState<EventMessage[]>([]);
-  
-  const [newItem, setNewItem] = useState<EventItemFormInput>({ name: '', quantity: 1 });
   
   const [submitting, setSubmitting] = useState(false);
   const [databaseError, setDatabaseError] = useState<{code?: string, message?: string} | null>(null);
@@ -86,28 +80,8 @@ const EventDetailPage: React.FC = () => {
           const attendance = eventData.attendees.find(a => a.userId === user.id);
           if (attendance) {
             setAttendanceId(attendance.id);
-            
-            // Load items if confirmed
-            if (status === 'confirmed') {
-              try {
-                const itemsData = await getItemsByAttendance(attendance.id);
-                setItems(itemsData);
-              } catch (err) {
-                console.error('Error loading items:', err);
-                // Continue even with errors
-              }
-            }
           }
         }
-      }
-      
-      // Carregar todos os itens do evento para todos os usuários
-      try {
-        const allItems = await getEventItemsWithUserInfo(id);
-        setAllEventItems(allItems);
-      } catch (err) {
-        console.error('Error loading all event items:', err);
-        // Continue even with errors
       }
       
       // Load messages
@@ -198,7 +172,7 @@ const EventDetailPage: React.FC = () => {
           'Se o problema persistir, entre em contato com o administrador.'
         );
       } else {
-        setError('Ocorreu um erro ao confirmar presença. Tente novamente mais tarde.');
+        setError('Ocorreu um erro ao confirmar presença');
       }
     } finally {
       setSubmitting(false);
@@ -210,10 +184,11 @@ const EventDetailPage: React.FC = () => {
     
     try {
       setSubmitting(true);
-      await cancelAttendance(id, user.id);
+      await cancelAttendance(id);
+      
+      // Reset attendance status
       setAttendanceStatus(null);
       setAttendanceId(null);
-      setItems([]);
       
       // Reload event to update attendees list
       const updatedEvent = await getEventById(id);
@@ -221,42 +196,29 @@ const EventDetailPage: React.FC = () => {
         setEvent(updatedEvent);
       }
     } catch (err) {
-      console.error('Error canceling attendance:', err);
+      console.error('Error cancelling attendance:', err);
       setError('Ocorreu um erro ao cancelar presença');
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleAddItem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!attendanceId || !newItem.name) return;
-    
-    try {
-      setSubmitting(true);
-      const createdItem = await addItem(attendanceId, newItem);
-      setItems(prevItems => [...prevItems, createdItem]);
-      setNewItem({ name: '', quantity: 1 });
-    } catch (err) {
-      console.error('Error adding item:', err);
-      setError('Ocorreu um erro ao adicionar item');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   const handleSendMessage = async (content: string) => {
-    if (!user || !isAuthenticated || !id) return;
+    if (!user || !isAuthenticated || !id || !attendanceId) return;
     
     try {
-      const message = await sendMessage(id, user.id, { content });
-      // Não precisamos mais adicionar a mensagem manualmente aqui
-      // pois ela será adicionada através da subscription
+      const message: EventMessageFormInput = {
+        event_id: id,
+        attendance_id: attendanceId,
+        content
+      };
+      
+      await sendMessage(message);
     } catch (err) {
       console.error('Error sending message:', err);
       toast({
         title: 'Erro ao enviar mensagem',
-        description: 'Não foi possível enviar sua mensagem. Tente novamente.',
+        description: 'Não foi possível enviar a mensagem. Tente novamente.',
         variant: 'destructive'
       });
     }
@@ -264,7 +226,24 @@ const EventDetailPage: React.FC = () => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('pt-BR');
+    return format(date, "d 'de' MMMM 'de' yyyy", { locale: ptBR });
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return format(date, 'HH:mm', { locale: ptBR });
+  };
+
+  // Função auxiliar para extrair iniciais do nome
+  const getInitials = (name?: string): string => {
+    if (!name) return '?';
+    
+    return name
+      .split(' ')
+      .map(part => part[0])
+      .join('')
+      .toUpperCase()
+      .substring(0, 2);
   };
 
   if (loading) {
@@ -364,11 +343,11 @@ const EventDetailPage: React.FC = () => {
   }
 
   const eventDate = new Date(event.date);
-  const formattedDate = format(eventDate, "dd 'de' MMMM 'de' yyyy", { locale: ptBR });
-  const formattedTime = format(eventDate, "HH:mm", { locale: ptBR });
+  const formattedDate = formatDate(event.date);
+  const formattedTime = formatTime(event.date);
 
   return (
-    <div className="container mx-auto py-8">
+    <div className="container py-8">
       <Button variant="outline" className="mb-6" onClick={() => navigate('/events')}>
         Voltar para Eventos
       </Button>
@@ -638,14 +617,13 @@ const EventDetailPage: React.FC = () => {
       </div>
       
       {/* Event Tabs */}
-      <Tabs defaultValue="attendees">
-        <TabsList className="mb-6">
-          <TabsTrigger value="attendees">Participantes</TabsTrigger>
-          <TabsTrigger value="items">O que Levar</TabsTrigger>
+      <Tabs defaultValue="details" className="mt-6">
+        <TabsList className="grid grid-cols-2 lg:grid-cols-2 lg:w-[400px]">
+          <TabsTrigger value="details">Detalhes</TabsTrigger>
           <TabsTrigger value="chat">Chat</TabsTrigger>
         </TabsList>
         
-        <TabsContent value="attendees">
+        <TabsContent value="details">
           <Card>
             <CardHeader>
               <CardTitle>Participantes Confirmados</CardTitle>
@@ -663,10 +641,16 @@ const EventDetailPage: React.FC = () => {
                   {event.attendees.map((attendance) => (
                     <div key={attendance.id} className="flex items-center space-x-4">
                       <Avatar>
-                        <AvatarImage src={attendance.user?.avatar_url || ''} />
-                        <AvatarFallback>
-                          {attendance.user?.name?.substring(0, 2).toUpperCase() || 'U'}
-                        </AvatarFallback>
+                        {attendance.user?.avatar_url ? (
+                          <AvatarImage 
+                            src={attendance.user.avatar_url} 
+                            alt={attendance.user?.name || 'Usuário'} 
+                          />
+                        ) : (
+                          <AvatarFallback>
+                            {attendance.user?.name ? getInitials(attendance.user.name) : <User className="h-4 w-4" />}
+                          </AvatarFallback>
+                        )}
                       </Avatar>
                       <div className="flex-1">
                         <p className="font-medium">{attendance.user?.name || 'Usuário'}</p>
@@ -683,107 +667,6 @@ const EventDetailPage: React.FC = () => {
                       </Badge>
                     </div>
                   ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-        
-        <TabsContent value="items">
-          <Card>
-            <CardHeader>
-              <CardTitle>O que Vamos Levar</CardTitle>
-              <CardDescription>
-                Lista de itens que os participantes confirmaram que vão levar
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <EventItemsList items={allEventItems} />
-              
-              {isAuthenticated && attendanceStatus === 'confirmed' && (
-                <>
-                  <Separator className="my-6" />
-                  
-                  <div className="bg-muted/30 p-4 rounded-md mb-4">
-                    <h3 className="font-medium mb-2">O que você vai levar?</h3>
-                    <p className="text-sm text-muted-foreground mb-4">
-                      Informe o que você pretende levar para o evento
-                    </p>
-                    
-                    <form onSubmit={handleAddItem} className="space-y-4">
-                      <div className="grid grid-cols-3 gap-4">
-                        <div className="col-span-2">
-                          <Label htmlFor="item-name">Item</Label>
-                          <Input 
-                            id="item-name"
-                            placeholder="Ex: Refrigerante, salgados, etc"
-                            value={newItem.name}
-                            onChange={(e) => setNewItem({...newItem, name: e.target.value})}
-                            required
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="item-quantity">Quantidade</Label>
-                          <Input 
-                            id="item-quantity"
-                            type="number"
-                            min="1"
-                            value={newItem.quantity}
-                            onChange={(e) => setNewItem({...newItem, quantity: parseInt(e.target.value)})}
-                            required
-                          />
-                        </div>
-                      </div>
-                      <Button type="submit" disabled={submitting || !newItem.name}>
-                        <PlusIcon className="h-4 w-4 mr-2" />
-                        Adicionar Item
-                      </Button>
-                    </form>
-                  </div>
-                  
-                  {items.length > 0 && (
-                    <div>
-                      <h3 className="font-medium mb-2">Seus itens confirmados:</h3>
-                      <div className="space-y-2">
-                        {items.map((item) => (
-                          <div key={item.id} className="flex justify-between items-center p-3 bg-accent/50 rounded-md">
-                            <div className="font-medium">{item.name}</div>
-                            <div className="text-sm text-muted-foreground">Quantidade: {item.quantity}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              )}
-              
-              {isAuthenticated && attendanceStatus !== 'confirmed' && (
-                <div className="mt-6 p-4 bg-muted/30 rounded-md text-center">
-                  <p className="text-muted-foreground">
-                    Confirme sua presença para adicionar itens que você irá levar.
-                  </p>
-                  <Button 
-                    onClick={handleConfirmAttendance}
-                    className="mt-2"
-                    variant="outline"
-                  >
-                    Confirmar Presença
-                  </Button>
-                </div>
-              )}
-              
-              {!isAuthenticated && (
-                <div className="mt-6 p-4 bg-muted/30 rounded-md text-center">
-                  <p className="text-muted-foreground">
-                    Faça login para confirmar sua presença e adicionar itens.
-                  </p>
-                  <Button 
-                    onClick={() => navigate('/login', { state: { from: `/events/${id}` } })}
-                    className="mt-2"
-                    variant="outline"
-                  >
-                    Entrar
-                  </Button>
                 </div>
               )}
             </CardContent>

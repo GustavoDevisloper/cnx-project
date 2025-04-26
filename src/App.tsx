@@ -173,7 +173,7 @@ function App() {
                   } />
                   
                   <Route path="playlists" element={
-                    <PrivateRoute requireLeader>
+                    <PrivateRoute>
                       <Playlists />
                     </PrivateRoute>
                   } />
