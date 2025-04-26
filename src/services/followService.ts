@@ -6,6 +6,7 @@ import { getHardcodedUsers } from './directUserHardcoded';
 import { forceLog, checkConsoleStatus } from '@/lib/directConsoleLogs';
 import { restoreConsole, restoreAndGetConsole } from '../lib/consoleOverride';
 import { getCurrentUser } from './authService';
+import { showInfoNotification } from '@/services/notificationService';
 
 export interface FollowableUser {
   id: string;
@@ -87,7 +88,7 @@ export const followUser = async (userId: string): Promise<boolean> => {
     // Obter informações do usuário que está sendo seguido
     const { data: userToFollow, error: userError } = await supabase
       .from('users')
-      .select('username, display_name, first_name')
+      .select('username, display_name, first_name, id')
       .eq('id', userId)
       .single();
     
@@ -115,6 +116,37 @@ export const followUser = async (userId: string): Promise<boolean> => {
     if (error) {
       logger.error('Erro ao inserir seguidor:', error);
       throw error;
+    }
+    
+    // Criar uma notificação para o usuário seguido
+    // Primeiro obtemos o nome do usuário que está seguindo
+    const currentUserName = currentUser.display_name || currentUser.username || 'Alguém';
+    
+    // Enviar a notificação para o banco de dados do usuário que está sendo seguido
+    try {
+      // Adicionar registro na tabela de notificações para o usuário seguido
+      await supabase
+        .from('notifications')
+        .insert({
+          user_id: userId, // ID do usuário que está sendo seguido
+          title: 'Novo seguidor',
+          message: `${currentUserName} começou a seguir você`,
+          type: 'follow',
+          related_user_id: currentUser.id,
+          read: false
+        });
+      
+      // Emitir um evento para o sistema de notificações
+      // Isso irá disparar uma notificação no centro de notificações do usuário
+      showInfoNotification(
+        'Novo seguidor',
+        `${currentUserName} começou a seguir você`
+      );
+      
+      logger.log('✅ Notificação de seguidor enviada com sucesso');
+    } catch (notifError) {
+      // Apenas logamos o erro, mas não interrompemos o fluxo
+      logger.error('Erro ao enviar notificação de seguidor:', notifError);
     }
     
     toast({

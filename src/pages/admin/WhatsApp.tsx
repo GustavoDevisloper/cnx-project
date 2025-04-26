@@ -13,7 +13,7 @@ import { ensureUnicodeEmojis } from '@/lib/emojiUtils';
 
 interface Contact {
   id: string;
-  real_name: string;
+  first_name: string;
   display_name: string;
   phone: string;
 }
@@ -32,8 +32,8 @@ const WhatsAppPage: React.FC = () => {
       // Obter todos os usuários
       const { data: userData, error: userError } = await supabase
         .from('users')
-        .select('id, real_name, display_name, phone_number')
-        .order('real_name', { ascending: true });
+        .select('id, first_name, display_name, phone_number')
+        .order('first_name', { ascending: true });
         
       if (userError) {
         console.error('Erro ao buscar usuários:', userError);
@@ -50,7 +50,7 @@ const WhatsAppPage: React.FC = () => {
         userContacts = userData
           .map(user => ({
             id: user.id,
-            real_name: user.real_name || 'Sem nome',
+            first_name: user.first_name || 'Sem nome',
             display_name: user.display_name || 'Usuário',
             phone: user.phone_number || ''
           }))
@@ -161,7 +161,7 @@ const WhatsAppPage: React.FC = () => {
                       <TableBody>
                         {contacts.map((contact) => (
                           <TableRow key={contact.id}>
-                            <TableCell>{contact.real_name}</TableCell>
+                            <TableCell>{contact.first_name}</TableCell>
                             <TableCell>{contact.display_name}</TableCell>
                             <TableCell>{contact.phone}</TableCell>
                             <TableCell className="flex space-x-2">
@@ -169,7 +169,7 @@ const WhatsAppPage: React.FC = () => {
                                 size="xs"
                                 variant="light"
                                 icon={MessageSquare}
-                                onClick={() => handleSelectContact(contact.phone, contact.real_name || contact.display_name)}
+                                onClick={() => handleSelectContact(contact.phone, contact.first_name || contact.display_name)}
                                 disabled={!contact.phone}
                               >
                                 Configurar
@@ -179,7 +179,7 @@ const WhatsAppPage: React.FC = () => {
                                 variant="primary"
                                 color="green"
                                 icon={ExternalLink}
-                                onClick={() => handleDirectWhatsApp(contact.phone, contact.real_name || contact.display_name)}
+                                onClick={() => handleDirectWhatsApp(contact.phone, contact.first_name || contact.display_name)}
                                 disabled={!contact.phone}
                               >
                                 Enviar

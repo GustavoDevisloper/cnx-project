@@ -14,13 +14,15 @@ import {
   Info,
   AlertCircle,
   CheckCircle2,
-  AlertTriangle 
+  AlertTriangle,
+  UserPlus 
 } from "lucide-react";
 import { useNotifications, Notification, NotificationType } from '@/services/notificationService';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { useNavigate } from 'react-router-dom';
 
 // Componente para o centro de notificações
 const NotificationCenter: React.FC = () => {
@@ -32,6 +34,7 @@ const NotificationCenter: React.FC = () => {
     clearNotificationsHistory
   } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
 
   // Marcar como lidas quando o menu é aberto
   const handleOpenChange = (open: boolean) => {
@@ -47,6 +50,7 @@ const NotificationCenter: React.FC = () => {
       case 'success': return <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />;
       case 'error': return <AlertCircle className="h-3.5 w-3.5 text-red-500" />;
       case 'warning': return <AlertTriangle className="h-3.5 w-3.5 text-yellow-500" />;
+      case 'follow': return <UserPlus className="h-3.5 w-3.5 text-blue-500" />;
       case 'info': default: return <Info className="h-3.5 w-3.5 text-blue-500" />;
     }
   };
@@ -57,7 +61,18 @@ const NotificationCenter: React.FC = () => {
       case 'success': return 'border-l-green-500';
       case 'error': return 'border-l-red-500';
       case 'warning': return 'border-l-yellow-500';
+      case 'follow': return 'border-l-blue-500';
       case 'info': default: return 'border-l-blue-500';
+    }
+  };
+
+  // Manipular clique em notificação
+  const handleNotificationClick = (notification: Notification) => {
+    markNotificationAsRead(notification.id);
+    
+    // Navegar para o perfil do usuário se for uma notificação de seguidor
+    if (notification.type === 'follow' && notification.related_user_id) {
+      navigate(`/profile/${notification.related_user_id}`);
     }
   };
 
@@ -112,8 +127,8 @@ const NotificationCenter: React.FC = () => {
               {notifications.map((notification) => (
                 <div 
                   key={notification.id}
-                  className={`mb-1.5 px-2 py-1.5 border-l-2 bg-muted/20 rounded-sm ${getBorderClass(notification.type)} ${notification.read ? 'opacity-60' : ''}`}
-                  onClick={() => markNotificationAsRead(notification.id)}
+                  className={`mb-1.5 px-2 py-1.5 border-l-2 bg-muted/20 rounded-sm ${getBorderClass(notification.type)} ${notification.read ? 'opacity-60' : ''} cursor-pointer hover:bg-muted/40 transition-colors`}
+                  onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start gap-2">
                     <div className="mt-0.5 flex-shrink-0">

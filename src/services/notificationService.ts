@@ -5,9 +5,11 @@ import {
   showInfoToast 
 } from '@/services/toast-service';
 import { useState, useEffect } from 'react';
+import { supabase } from '@/lib/supabase';
+import { getCurrentUser } from '@/services/authService';
 
 // Tipos de notificações
-export type NotificationType = 'success' | 'error' | 'warning' | 'info';
+export type NotificationType = 'success' | 'error' | 'warning' | 'info' | 'follow';
 
 // Interface para notificação
 export interface Notification {
@@ -17,6 +19,8 @@ export interface Notification {
   type: NotificationType;
   timestamp: number;
   read: boolean;
+  related_user_id?: string;
+  related_content_id?: string;
 }
 
 // Chave para o armazenamento no localStorage
@@ -120,14 +124,24 @@ export const markNotificationAsRead = (notificationId: string): void => {
 /**
  * Marca todas as notificações como lidas
  */
-export const markAllNotificationsAsRead = (): void => {
+export const markAllNotificationsAsRead = async (): Promise<void> => {
   try {
+    // Marcar notificações locais como lidas
     const notifications = getNotificationsHistory();
     const updatedNotifications = notifications.map(notification => ({ 
       ...notification, read: true 
     }));
     
     localStorage.setItem(NOTIFICATIONS_STORAGE_KEY, JSON.stringify(updatedNotifications));
+    
+    // Marcar notificações do Supabase como lidas
+    const currentUser = await getCurrentUser();
+    if (currentUser) {
+      await supabase.rpc('mark_all_notifications_as_read', {
+        user_uuid: currentUser.id
+      });
+    }
+    
     window.dispatchEvent(new CustomEvent('notifications-updated'));
   } catch (error) {
     console.error('Erro ao marcar todas notificações como lidas:', error);
@@ -147,6 +161,40 @@ export const clearNotificationsHistory = (): void => {
 };
 
 /**
+ * Busca notificações do banco de dados Supabase
+ */
+export const fetchDatabaseNotifications = async (): Promise<Notification[]> => {
+  try {
+    const currentUser = await getCurrentUser();
+    if (!currentUser) return [];
+    
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', currentUser.id)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    
+    if (error) throw error;
+    
+    // Converter para o formato de notificação local
+    return (data || []).map(notification => ({
+      id: notification.id,
+      title: notification.title,
+      message: notification.message,
+      type: (notification.type as NotificationType) || 'info',
+      timestamp: new Date(notification.created_at).getTime(),
+      read: notification.read,
+      related_user_id: notification.related_user_id,
+      related_content_id: notification.related_content_id
+    }));
+  } catch (error) {
+    console.error('Erro ao buscar notificações do banco de dados:', error);
+    return [];
+  }
+};
+
+/**
  * Hook para usar o sistema de notificações em componentes React
  */
 export const useNotifications = () => {
@@ -155,11 +203,47 @@ export const useNotifications = () => {
     getNotificationsHistory().filter(n => !n.read).length
   );
   
+  // Buscar notificações do banco de dados
+  useEffect(() => {
+    const loadDatabaseNotifications = async () => {
+      try {
+        const dbNotifications = await fetchDatabaseNotifications();
+        
+        // Combinar notificações do banco com notificações locais
+        const localNotifications = getNotificationsHistory();
+        const combinedNotifications = [...dbNotifications, ...localNotifications]
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, MAX_NOTIFICATIONS);
+        
+        setNotifications(combinedNotifications);
+        setUnreadCount(combinedNotifications.filter(n => !n.read).length);
+      } catch (error) {
+        console.error('Erro ao carregar notificações do banco:', error);
+      }
+    };
+    
+    loadDatabaseNotifications();
+  }, []);
+  
   useEffect(() => {
     const handleNotificationsUpdated = () => {
-      const updatedNotifications = getNotificationsHistory();
-      setNotifications(updatedNotifications);
-      setUnreadCount(updatedNotifications.filter(n => !n.read).length);
+      const updatedLocalNotifications = getNotificationsHistory();
+      
+      // Recarregar notificações do banco de dados quando há uma atualização
+      fetchDatabaseNotifications().then(dbNotifications => {
+        const combinedNotifications = [...dbNotifications, ...updatedLocalNotifications]
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, MAX_NOTIFICATIONS);
+        
+        setNotifications(combinedNotifications);
+        setUnreadCount(combinedNotifications.filter(n => !n.read).length);
+      }).catch(error => {
+        console.error('Erro ao recarregar notificações do banco:', error);
+        
+        // Fallback para notificações locais se o banco falhar
+        setNotifications(updatedLocalNotifications);
+        setUnreadCount(updatedLocalNotifications.filter(n => !n.read).length);
+      });
     };
     
     window.addEventListener('notifications-updated', handleNotificationsUpdated);

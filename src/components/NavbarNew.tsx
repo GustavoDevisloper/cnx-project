@@ -26,7 +26,6 @@ const NavbarNew = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [avatarKey, setAvatarKey] = useState(Date.now()); // Para forçar atualização da imagem
   const [mobileSearchActive, setMobileSearchActive] = useState(false);
-  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -242,15 +241,6 @@ const NavbarNew = () => {
   const toggleMobileSearch = () => {
     setMobileSearchActive(!mobileSearchActive);
   };
-  
-  const handleMobileSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (mobileSearchQuery.trim()) {
-      navigate(`/user-search?q=${encodeURIComponent(mobileSearchQuery.trim())}`);
-      setMobileSearchActive(false);
-      setMobileSearchQuery('');
-    }
-  };
 
   // Função para garantir que a URL da imagem tenha sempre um parâmetro de atualização
   const getAvatarUrl = (url: string | undefined) => {
@@ -434,28 +424,23 @@ const NavbarNew = () => {
         <div className="flex md:hidden items-center space-x-2">
           {/* Barra de pesquisa mobile */}
           {mobileSearchActive ? (
-            <form onSubmit={handleMobileSearch} className="flex items-center pr-2">
-              <div className="relative flex-1">
-                <Input
-                  type="text"
-                  placeholder="Buscar pessoas..."
-                  value={mobileSearchQuery}
-                  onChange={(e) => setMobileSearchQuery(e.target.value)}
-                  className="pl-9 h-9"
-                  autoFocus
-                />
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              </div>
+            <div className="flex-1 relative z-50">
+              <ProfileSearchBar 
+                placeholder="Buscar pessoas..."
+                maxResults={4}
+                autoFocus={true}
+                className="w-full" 
+              />
               <Button 
                 type="button" 
                 variant="ghost" 
                 size="icon" 
                 onClick={toggleMobileSearch}
-                className="ml-1"
+                className="absolute right-0 top-0 h-full"
               >
                 <X className="h-5 w-5" />
               </Button>
-            </form>
+            </div>
           ) : (
             <>
               {authenticated && (
