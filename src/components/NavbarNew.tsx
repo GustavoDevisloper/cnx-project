@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { NavLink, useLocation, useNavigate } from "react-router-dom";
-import { Book, Music, User, MessageCircleQuestion, LogIn, LogOut, UserCircle, Settings, Calendar, Home, BookOpen, HelpCircle, Menu, X } from "lucide-react";
+import { Book, Music, User, MessageCircleQuestion, LogIn, LogOut, UserCircle, Settings, Calendar, Home, BookOpen, HelpCircle, Menu, X, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { isAuthenticated, signOut, getCurrentUser } from "@/services/authService";
@@ -17,6 +17,7 @@ import { User as UserType } from '@/services/authService';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import NotificationCenter from "@/components/NotificationCenter";
 import ProfileSearchBar from '@/components/ProfileSearchBar';
+import { Input } from "@/components/ui/input";
 
 const NavbarNew = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -24,6 +25,8 @@ const NavbarNew = () => {
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [avatarKey, setAvatarKey] = useState(Date.now()); // Para forçar atualização da imagem
+  const [mobileSearchActive, setMobileSearchActive] = useState(false);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState('');
   const location = useLocation();
   const navigate = useNavigate();
   
@@ -235,6 +238,19 @@ const NavbarNew = () => {
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
   };
+  
+  const toggleMobileSearch = () => {
+    setMobileSearchActive(!mobileSearchActive);
+  };
+  
+  const handleMobileSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (mobileSearchQuery.trim()) {
+      navigate(`/user-search?q=${encodeURIComponent(mobileSearchQuery.trim())}`);
+      setMobileSearchActive(false);
+      setMobileSearchQuery('');
+    }
+  };
 
   // Função para garantir que a URL da imagem tenha sempre um parâmetro de atualização
   const getAvatarUrl = (url: string | undefined) => {
@@ -258,10 +274,12 @@ const NavbarNew = () => {
       )}
     >
       <div className="max-w-7xl mx-auto flex items-center justify-between">
+        {/* Logo e Título - Sempre visível */}
         <NavLink to="/" className="flex items-center space-x-2" onClick={closeMobileMenu}>
           <span className="text-xl font-semibold">Conexão Jovem</span>
         </NavLink>
         
+        {/* Links de navegação - Visível apenas em desktop */}
         <nav className="hidden md:flex items-center space-x-8">
           <NavLink 
             to="/"
@@ -321,6 +339,7 @@ const NavbarNew = () => {
           )}
         </nav>
         
+        {/* Área direita do header - Versão Desktop */}
         <div className="hidden md:flex items-center space-x-4">
           {/* Adicionar NotificationCenter apenas para usuários autenticados */}
           {authenticated && <NotificationCenter />}
@@ -409,17 +428,58 @@ const NavbarNew = () => {
               </Button>
             )
           )}
-          
-          {/* Botão Menu Hambúrguer para dispositivos móveis */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden focus:outline-none"
-            onClick={toggleMobileMenu}
-            aria-label="Menu"
-          >
-            {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
-          </Button>
+        </div>
+        
+        {/* Área direita do header - Versão Mobile */}
+        <div className="flex md:hidden items-center space-x-2">
+          {/* Barra de pesquisa mobile */}
+          {mobileSearchActive ? (
+            <form onSubmit={handleMobileSearch} className="flex items-center pr-2">
+              <div className="relative flex-1">
+                <Input
+                  type="text"
+                  placeholder="Buscar pessoas..."
+                  value={mobileSearchQuery}
+                  onChange={(e) => setMobileSearchQuery(e.target.value)}
+                  className="pl-9 h-9"
+                  autoFocus
+                />
+                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              </div>
+              <Button 
+                type="button" 
+                variant="ghost" 
+                size="icon" 
+                onClick={toggleMobileSearch}
+                className="ml-1"
+              >
+                <X className="h-5 w-5" />
+              </Button>
+            </form>
+          ) : (
+            <>
+              {authenticated && (
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={toggleMobileSearch}
+                >
+                  <Search className="h-5 w-5" />
+                </Button>
+              )}
+              
+              {/* Botão Menu Hambúrguer */}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="focus:outline-none"
+                onClick={toggleMobileMenu}
+                aria-label="Menu"
+              >
+                {mobileMenuOpen ? <X className="h-6 w-6" /> : <Menu className="h-6 w-6" />}
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
