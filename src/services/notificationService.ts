@@ -203,26 +203,36 @@ export const useNotifications = () => {
     getNotificationsHistory().filter(n => !n.read).length
   );
   
-  // Buscar notificações do banco de dados
+  // Função para carregar notificações do banco de dados
+  const loadDatabaseNotifications = async () => {
+    try {
+      const dbNotifications = await fetchDatabaseNotifications();
+      
+      // Combinar notificações do banco com notificações locais
+      const localNotifications = getNotificationsHistory();
+      const combinedNotifications = [...dbNotifications, ...localNotifications]
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, MAX_NOTIFICATIONS);
+      
+      setNotifications(combinedNotifications);
+      setUnreadCount(combinedNotifications.filter(n => !n.read).length);
+    } catch (error) {
+      console.error('Erro ao carregar notificações do banco:', error);
+    }
+  };
+  
+  // Buscar notificações do banco de dados ao montar o componente
   useEffect(() => {
-    const loadDatabaseNotifications = async () => {
-      try {
-        const dbNotifications = await fetchDatabaseNotifications();
-        
-        // Combinar notificações do banco com notificações locais
-        const localNotifications = getNotificationsHistory();
-        const combinedNotifications = [...dbNotifications, ...localNotifications]
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, MAX_NOTIFICATIONS);
-        
-        setNotifications(combinedNotifications);
-        setUnreadCount(combinedNotifications.filter(n => !n.read).length);
-      } catch (error) {
-        console.error('Erro ao carregar notificações do banco:', error);
-      }
-    };
-    
     loadDatabaseNotifications();
+  }, []);
+  
+  // Polling para verificar novas notificações a cada 30 segundos
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      loadDatabaseNotifications();
+    }, 30000); // 30 segundos
+    
+    return () => clearInterval(intervalId);
   }, []);
   
   useEffect(() => {

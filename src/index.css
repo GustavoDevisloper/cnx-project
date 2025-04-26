@@ -162,3 +162,37 @@
     animation: heart-pulse 0.6s ease-in-out;
   }
 }
+
+/* Ajuste para calendário no mobile */
+.mobile-calendar-fix {
+  touch-action: manipulation;
+}
+
+.mobile-calendar-fix button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.mobile-calendar-fix .rdp-cell {
+  padding: 0;
+  margin: 0;
+}
+
+.mobile-calendar-fix .rdp-button {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Aumenta a área clicável do calendário em dispositivos touch */
+@media (pointer: coarse) {
+  .rdp-day, .rdp-button {
+    min-height: 40px !important;
+    min-width: 40px !important;
+    font-size: 16px !important;
+  }
+  
+  .rdp-nav button {
+    min-height: 40px !important;
+    min-width: 40px !important;
+  }
+}

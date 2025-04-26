@@ -136,13 +136,6 @@ export const followUser = async (userId: string): Promise<boolean> => {
           read: false
         });
       
-      // Emitir um evento para o sistema de notificações
-      // Isso irá disparar uma notificação no centro de notificações do usuário
-      showInfoNotification(
-        'Novo seguidor',
-        `${currentUserName} começou a seguir você`
-      );
-      
       logger.log('✅ Notificação de seguidor enviada com sucesso');
     } catch (notifError) {
       // Apenas logamos o erro, mas não interrompemos o fluxo

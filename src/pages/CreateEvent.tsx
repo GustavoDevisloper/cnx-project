@@ -220,6 +220,7 @@ const CreateEvent: React.FC = () => {
                             onSelect={field.onChange}
                             disabled={(date) => date < new Date()}
                             initialFocus
+                            className="mobile-calendar-fix"
                           />
                         </PopoverContent>
                       </Popover>
