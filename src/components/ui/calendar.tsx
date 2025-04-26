@@ -11,8 +11,28 @@ function Calendar({
   className,
   classNames,
   showOutsideDays = true,
+  onSelect,
   ...props
 }: CalendarProps) {
+  // Função para garantir que a seleção funcione corretamente em dispositivos móveis
+  const handleDaySelect = React.useCallback(
+    (day: Date | undefined, selectedDay: Date, e: React.MouseEvent<HTMLButtonElement>) => {
+      if (onSelect) {
+        // Forçar a seleção da data
+        onSelect(day, selectedDay, e);
+        
+        // Se estiver em dispositivo móvel, adicionar um pequeno atraso antes de fechar o popover
+        if (window.matchMedia('(pointer: coarse)').matches) {
+          setTimeout(() => {
+            // Emitir um evento customizado para indicar que a seleção foi finalizada
+            window.dispatchEvent(new CustomEvent('calendar-date-selected'));
+          }, 100);
+        }
+      }
+    },
+    [onSelect]
+  );
+
   return (
     <DayPicker
       showOutsideDays={showOutsideDays}
@@ -55,6 +75,7 @@ function Calendar({
         IconLeft: ({ ..._props }) => <ChevronLeft className="h-4 w-4" />,
         IconRight: ({ ..._props }) => <ChevronRight className="h-4 w-4" />,
       }}
+      onDayClick={handleDaySelect}
       {...props}
     />
   );

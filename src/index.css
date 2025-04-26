@@ -169,30 +169,68 @@
 }
 
 .mobile-calendar-fix button {
-  min-height: 44px;
-  min-width: 44px;
+  min-height: 44px !important;
+  min-width: 44px !important;
+  font-size: 16px !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .mobile-calendar-fix .rdp-cell {
-  padding: 0;
-  margin: 0;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
 .mobile-calendar-fix .rdp-button {
   cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
+  min-height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 50%;
+  font-size: 16px !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mobile-calendar-fix .rdp-button:active {
+  transform: scale(0.95);
+  transition: transform 0.1s ease;
 }
 
 /* Aumenta a área clicável do calendário em dispositivos touch */
 @media (pointer: coarse) {
   .rdp-day, .rdp-button {
-    min-height: 40px !important;
-    min-width: 40px !important;
+    min-height: 44px !important;
+    min-width: 44px !important;
     font-size: 16px !important;
+    touch-action: manipulation;
   }
   
   .rdp-nav button {
-    min-height: 40px !important;
-    min-width: 40px !important;
+    min-height: 44px !important;
+    min-width: 44px !important;
+  }
+  
+  .rdp-day:active::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 36px;
+    height: 36px;
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 50%;
+    z-index: -1;
+  }
+
+  /* Garantir que o popover permanece aberto durante a interação com o calendário */
+  [data-state="open"].rdp {
+    pointer-events: auto !important;
+  }
+  
+  /* Aumentar a área de clique/toque */
+  .rdp-button {
+    padding: 10px !important;
   }
 }

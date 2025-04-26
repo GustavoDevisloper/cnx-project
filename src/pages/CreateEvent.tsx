@@ -213,15 +213,51 @@ const CreateEvent: React.FC = () => {
                             </Button>
                           </FormControl>
                         </PopoverTrigger>
-                        <PopoverContent className="w-auto p-0" align="start">
-                          <Calendar
-                            mode="single"
-                            selected={field.value}
-                            onSelect={field.onChange}
-                            disabled={(date) => date < new Date()}
-                            initialFocus
-                            className="mobile-calendar-fix"
-                          />
+                        <PopoverContent 
+                          className="w-auto p-0" 
+                          align="start"
+                          forceMount
+                          onOpenAutoFocus={(e) => {
+                            // Prevenir o foco automático em dispositivos móveis
+                            if (window.matchMedia('(pointer: coarse)').matches) {
+                              e.preventDefault();
+                            }
+                          }}
+                          onCloseAutoFocus={(e) => {
+                            // Prevenir o foco automático em dispositivos móveis
+                            if (window.matchMedia('(pointer: coarse)').matches) {
+                              e.preventDefault();
+                            }
+                          }}
+                        >
+                          <div
+                            onTouchEnd={(e) => {
+                              // Garantir que o evento de touch seja processado
+                              e.stopPropagation();
+                              setTimeout(() => {
+                                // Forçar a atualização do campo
+                                if (field.value) {
+                                  field.onChange(new Date(field.value));
+                                }
+                              }, 200);
+                            }}
+                          >
+                            <Calendar
+                              mode="single"
+                              selected={field.value}
+                              onSelect={(date) => {
+                                field.onChange(date);
+                                // Adicionar um pequeno atraso para garantir que a data seja aplicada antes de fechar
+                                setTimeout(() => {
+                                  // Disparar evento de close no popover via click fora
+                                  document.body.click();
+                                }, 300);
+                              }}
+                              disabled={(date) => date < new Date()}
+                              initialFocus
+                              className="mobile-calendar-fix"
+                            />
+                          </div>
                         </PopoverContent>
                       </Popover>
                       <FormDescription>
