@@ -1,8 +1,9 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { Home, Book, BookOpen, Music, Settings, User, MessageCircleQuestion, LogOut, Calendar, Menu, X } from 'lucide-react';
+import { Home, Book, BookOpen, Music, Settings, User, MessageCircleQuestion, LogOut, Calendar, Menu, X, Users } from 'lucide-react';
 import { ThemeSwitcher } from './ThemeSwitcher';
 import { isAuthenticated, isAdmin, signOut } from '@/services/authService';
 import { useState, useEffect, useCallback } from 'react';
+import ProfileSearchBar from '@/components/ProfileSearchBar';
 
 export function MainNavigation() {
   const [authenticated, setAuthenticated] = useState(false);
@@ -161,6 +162,16 @@ export function MainNavigation() {
               <Music className="w-5 h-5 mr-1.5" />
               <span>Playlists</span>
             </NavLink>
+
+            {authenticated && (
+              <div className="ml-2 w-48">
+                <ProfileSearchBar 
+                  placeholder="Buscar pessoas..."
+                  maxResults={4}
+                  className="w-full" 
+                />
+              </div>
+            )}
           </div>
           
           {/* Área do usuário */}
@@ -362,6 +373,22 @@ export function MainNavigation() {
             >
               <User className="w-5 h-5 mr-3" />
               <span className="font-medium">Login</span>
+            </NavLink>
+          )}
+
+          {/* Link para busca de usuários */}
+          {authenticated && (
+            <NavLink
+              to="/user-search"
+              className={({ isActive }) =>
+                `flex items-center px-4 py-3 rounded-md ${
+                  isActive ? 'bg-primary/10 text-primary' : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                }`
+              }
+              onClick={closeMobileMenu}
+            >
+              <Users className="w-5 h-5 mr-3" />
+              <span className="font-medium">Buscar & Conectar</span>
             </NavLink>
           )}
         </div>

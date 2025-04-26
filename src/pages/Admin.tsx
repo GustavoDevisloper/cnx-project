@@ -14,6 +14,7 @@ import { DashboardStats, getDashboardStats } from "@/services/statsService";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { getWhatsAppLink } from "@/services/whatsappBotService";
 import { logger } from "@/lib/utils";
+import WhatsAppPage from './admin/WhatsApp';
 
 export default function Admin() {
   const [loading, setLoading] = useState(true);
@@ -256,13 +257,13 @@ export default function Admin() {
           </TabsTrigger>
           {isAdminUser && (
             <>
-              <TabsTrigger 
-                value="users" 
-                onClick={() => navigate('/admin?tab=users', { replace: true })}
-              >
-                <Users className="h-4 w-4 mr-1.5" />
-                Usuários
-              </TabsTrigger>
+            <TabsTrigger 
+              value="users" 
+              onClick={() => navigate('/admin?tab=users', { replace: true })}
+            >
+              <Users className="h-4 w-4 mr-1.5" />
+              Usuários
+            </TabsTrigger>
               <TabsTrigger 
                 value="whatsapp" 
                 onClick={() => navigate('/admin?tab=whatsapp', { replace: true })}
@@ -448,84 +449,9 @@ export default function Admin() {
         )}
 
         <TabsContent value="whatsapp" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Contatos WhatsApp</CardTitle>
-                  <CardDescription>
-                    Lista de usuários com seus contatos para WhatsApp
-                  </CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={loadUsers} disabled={loadingUsers}>
-                  <RefreshCw className={`h-4 w-4 mr-2 ${loadingUsers ? 'animate-spin' : ''}`} />
-                  Atualizar Lista
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[250px]">Nome Real</TableHead>
-                      <TableHead>Exibição</TableHead>
-                      <TableHead>Telefone</TableHead>
-                      <TableHead className="text-right">Ações</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {loadingUsers ? (
-                      <TableRow>
-                        <TableCell colSpan={4} className="text-center py-10">
-                          <div className="w-8 h-8 border-4 border-t-primary rounded-full animate-spin mx-auto mb-4"></div>
-                          <p>Carregando contatos...</p>
-                        </TableCell>
-                      </TableRow>
-                    ) : (
-                      <>
-                        {users
-                          .filter(user => user.phone_number)
-                          .map((user) => (
-                            <TableRow key={user.id}>
-                              <TableCell className="font-medium">
-                                {user.real_name || user.first_name || "Nome não definido"}
-                              </TableCell>
-                              <TableCell>
-                                {user.display_name || user.displayName || user.username || user.email}
-                              </TableCell>
-                              <TableCell>{user.phone_number}</TableCell>
-                              <TableCell className="text-right">
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => openWhatsAppChat(
-                                    user.phone_number, 
-                                    user.real_name || user.first_name || user.display_name
-                                  )}
-                                >
-                                  <MessageSquare className="h-4 w-4 mr-2" />
-                                  WhatsApp
-                                </Button>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        {users.filter(user => user.phone_number).length === 0 && !loadingUsers && (
-                          <TableRow>
-                            <TableCell colSpan={4} className="text-center py-6 text-muted-foreground">
-                              Nenhum usuário com número de WhatsApp encontrado.
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </>
-                    )}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
+          <WhatsAppPage />
         </TabsContent>
-
+        
         <TabsContent value="content" className="space-y-4">
           <Card>
             <CardHeader>

@@ -15,17 +15,29 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const redirectUrl = searchParams.get('redirect') || '/';
+  
+  // Buscar redirecionamento da URL ou do sessionStorage
+  const redirectFromParams = searchParams.get('redirect') || '/';
+  const redirectFromStorage = sessionStorage.getItem('returnTo') || '/';
+  const redirectUrl = redirectFromParams !== '/' ? decodeURIComponent(redirectFromParams) : redirectFromStorage;
 
   useEffect(() => {
     // Remover qualquer flag de login em andamento
     sessionStorage.removeItem('login_in_progress');
+    
+    // Log para debugging
+    console.log('🔍 Destino após login:', redirectUrl);
     
     // Verifica se o usuário já está autenticado com nova função
     const checkAuth = async () => {
       try {
         const authenticated = await checkAuthStatus();
         if (authenticated) {
+          console.log('✅ Usuário já autenticado, redirecionando para:', redirectUrl);
+          
+          // Limpar returnTo do sessionStorage após redirecionamento
+          sessionStorage.removeItem('returnTo');
+          
           // Se já estiver autenticado, direcionar para a URL de redirecionamento
           navigate(redirectUrl);
         }
@@ -66,6 +78,7 @@ export default function Login() {
     }
     
     console.log('🚀 Iniciando processo de login');
+    console.log('📍 Após login bem-sucedido, redirecionará para:', redirectUrl);
     
     try {
       setLoading(true);
@@ -109,6 +122,9 @@ export default function Login() {
         title: "Login bem-sucedido",
         description: "Bem-vindo de volta!"
       });
+      
+      // Limpar returnTo do sessionStorage após redirecionamento
+      sessionStorage.removeItem('returnTo');
       
       // Depois de login bem-sucedido, redirecionar para a URL salva
       navigate(redirectUrl);

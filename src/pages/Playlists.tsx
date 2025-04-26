@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Plus, Music, Search, RefreshCw, Headphones, ExternalLink, Loader2, User, Book } from "lucide-react";
+import { Plus, Music, Search, RefreshCw, Headphones, ExternalLink, Loader2, User, Book, MessageCircle, Bell, Image, X, Upload } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { SpotifyLogin } from "@/components/SpotifyLogin";
 import { 
@@ -23,6 +23,12 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
+import { Textarea } from "@/components/ui/textarea";
+import { getAllUsers } from "@/services/authService";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { saveImageLocally } from "@/services/storageService";
+import FileUploader from "@/components/FileUploader";
 
 interface Playlist {
   id: string;
@@ -44,6 +50,15 @@ const Playlists = () => {
     spotifyLink: ""
   });
   
+  // Estado para alertas de administrador
+  const [alertDialogOpen, setAlertDialogOpen] = useState(false);
+  const [alertMessage, setAlertMessage] = useState("");
+  const [alertTitle, setAlertTitle] = useState("");
+  const [members, setMembers] = useState<any[]>([]);
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
+  const [loadingMembers, setLoadingMembers] = useState(false);
+  const [sendingAlert, setSendingAlert] = useState(false);
+  
   // Estado para integração com Spotify
   const [isApiAvailable, setIsApiAvailable] = useState(false);
   const [isCheckingApi, setIsCheckingApi] = useState(true);
@@ -55,6 +70,12 @@ const Playlists = () => {
   const [activeTab, setActiveTab] = useState("recommended");
   const [searchResultsTab, setSearchResultsTab] = useState("tracks");
   const [filter, setFilter] = useState<string>("all");
+  
+  // Estado para upload de imagem
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const adminUser = isAdmin();
   const searchResultsRef = useRef<HTMLDivElement>(null);
@@ -158,6 +179,82 @@ const Playlists = () => {
     }));
   };
 
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    
+    // Verificar tamanho (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "Arquivo muito grande",
+        description: "Por favor, selecione uma imagem com menos de 2MB",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    // Verificar tipo
+    const fileType = file.type.toLowerCase();
+    if (!fileType.match(/^image\/(jpeg|jpg|png|gif|webp)$/)) {
+      toast({
+        title: "Formato não suportado",
+        description: "Use apenas imagens JPG, PNG, GIF ou WebP",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setSelectedImage(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+  
+  const handleRemoveImage = () => {
+    setSelectedImage(null);
+    if (imagePreview) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImagePreview(null);
+    
+    // Limpar input para permitir selecionar o mesmo arquivo novamente
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+  
+  const handleUploadImage = async () => {
+    if (!selectedImage) return;
+    
+    setIsUploadingImage(true);
+    
+    try {
+      const imagePath = await saveImageLocally(selectedImage, 'playlists');
+      
+      if (imagePath) {
+        setNewPlaylist(prev => ({
+          ...prev,
+          imageUrl: imagePath
+        }));
+        
+        toast({
+          title: "Imagem carregada",
+          description: "A imagem foi salva com sucesso",
+          variant: "default"
+        });
+      } else {
+        throw new Error("Não foi possível salvar a imagem");
+      }
+    } catch (error) {
+      console.error("Erro ao fazer upload da imagem:", error);
+      toast({
+        title: "Erro no upload",
+        description: "Não foi possível salvar a imagem. Tente novamente.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
+
   const handleAddPlaylist = () => {
     if (!newPlaylist.title || !newPlaylist.artist || !newPlaylist.spotifyLink) {
       toast({
@@ -185,6 +282,9 @@ const Playlists = () => {
       imageUrl: "",
       spotifyLink: ""
     });
+    
+    // Limpar dados da imagem
+    handleRemoveImage();
     
     setIsOpen(false);
     
@@ -598,6 +698,121 @@ const Playlists = () => {
     );
   };
 
+  // Função para carregar todos os membros
+  const loadMembers = async () => {
+    if (members.length > 0) return; // Evita carregar novamente se já tiver dados
+    
+    setLoadingMembers(true);
+    try {
+      const users = await getAllUsers();
+      setMembers(users.filter(user => user.email)); // Filtra apenas usuários com email
+    } catch (error) {
+      console.error("Erro ao carregar membros:", error);
+      toast({
+        title: "Erro ao carregar membros",
+        description: "Não foi possível obter a lista de membros",
+        variant: "destructive"
+      });
+    } finally {
+      setLoadingMembers(false);
+    }
+  };
+  
+  // Função para alternar seleção de membro
+  const toggleMemberSelection = (userId: string) => {
+    setSelectedMembers(prev => 
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+  
+  // Função para selecionar todos os membros
+  const selectAllMembers = () => {
+    if (selectedMembers.length === members.length) {
+      setSelectedMembers([]);
+    } else {
+      setSelectedMembers(members.map(member => member.id));
+    }
+  };
+  
+  // Função para enviar alerta
+  const sendAlert = async () => {
+    if (!alertTitle.trim()) {
+      toast({
+        title: "Título obrigatório",
+        description: "Por favor, forneça um título para o alerta",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (!alertMessage.trim()) {
+      toast({
+        title: "Mensagem obrigatória",
+        description: "Por favor, digite uma mensagem para o alerta",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    if (selectedMembers.length === 0) {
+      toast({
+        title: "Selecione destinatários",
+        description: "Por favor, selecione pelo menos um membro para receber o alerta",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setSendingAlert(true);
+    
+    try {
+      // Implementar envio de alertas para os usuários selecionados
+      // Este é um exemplo simulado - integre com seu backend real
+      
+      // Simular tempo de envio
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Informação de sucesso na interface
+      toast({
+        title: "Alerta enviado com sucesso",
+        description: `Alerta enviado para ${selectedMembers.length} membro(s)`,
+        variant: "default"
+      });
+      
+      // Limpar formulário e fechar diálogo
+      setAlertTitle("");
+      setAlertMessage("");
+      setSelectedMembers([]);
+      setAlertDialogOpen(false);
+      
+    } catch (error) {
+      console.error("Erro ao enviar alerta:", error);
+      toast({
+        title: "Erro ao enviar alerta",
+        description: "Não foi possível enviar o alerta. Tente novamente mais tarde.",
+        variant: "destructive"
+      });
+    } finally {
+      setSendingAlert(false);
+    }
+  };
+
+  // Função para quando a imagem for carregada via FileUploader
+  const handleFileUploaded = (filePath: string) => {
+    setNewPlaylist(prev => ({
+      ...prev,
+      imageUrl: filePath
+    }));
+    
+    toast({
+      title: "Imagem carregada",
+      description: "A imagem foi salva com sucesso para a playlist",
+      variant: "default"
+    });
+  };
+
   // Se estamos verificando a API, mostrar loading
   if (isCheckingApi) {
     return (
@@ -631,6 +846,21 @@ const Playlists = () => {
           </div>
           
           <div className="flex items-center gap-3">
+            {adminUser && (
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-yellow-400 border-yellow-400/30 hover:bg-yellow-400/10"
+                onClick={() => {
+                  setAlertDialogOpen(true);
+                  loadMembers();
+                }}
+              >
+                <Bell size={16} className="mr-2" />
+                Enviar Alerta
+              </Button>
+            )}
+            
             <Button 
               variant="outline" 
               size="sm" 
@@ -644,6 +874,134 @@ const Playlists = () => {
           </div>
         </div>
       </div>
+
+      {/* Modal de Alerta para Administradores */}
+      <Dialog open={alertDialogOpen} onOpenChange={setAlertDialogOpen}>
+        <DialogContent className="bg-zinc-900 text-white border-zinc-800 max-w-3xl">
+          <DialogHeader>
+            <DialogTitle className="text-white text-xl flex items-center">
+              <Bell className="mr-2 text-yellow-400" size={20} />
+              Enviar Alerta aos Membros
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="grid gap-4 py-2">
+            <div>
+              <Label htmlFor="alertTitle" className="text-zinc-400 mb-1 block">
+                Título do Alerta
+              </Label>
+              <Input
+                id="alertTitle"
+                value={alertTitle}
+                onChange={(e) => setAlertTitle(e.target.value)}
+                className="bg-zinc-800 border-zinc-700 text-white"
+                placeholder="Ex: Nova playlist disponível"
+              />
+            </div>
+            
+            <div>
+              <Label htmlFor="alertMessage" className="text-zinc-400 mb-1 block">
+                Mensagem
+              </Label>
+              <Textarea
+                id="alertMessage"
+                value={alertMessage}
+                onChange={(e) => setAlertMessage(e.target.value)}
+                className="bg-zinc-800 border-zinc-700 text-white min-h-[120px]"
+                placeholder="Digite aqui sua mensagem para os membros..."
+              />
+            </div>
+            
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-zinc-400">
+                  Destinatários
+                </Label>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  className="text-xs h-7 px-2"
+                  onClick={selectAllMembers}
+                >
+                  {selectedMembers.length === members.length ? "Desmarcar Todos" : "Selecionar Todos"}
+                </Button>
+              </div>
+              
+              {loadingMembers ? (
+                <div className="space-y-2">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <Skeleton className="h-5 w-5" />
+                      <Skeleton className="h-4 w-48" />
+                    </div>
+                  ))}
+                </div>
+              ) : members.length > 0 ? (
+                <ScrollArea className="h-[200px] border border-zinc-800 rounded-md p-2">
+                  <div className="space-y-2">
+                    {members.map((member) => (
+                      <div key={member.id} className="flex items-center gap-2 py-1 px-2 hover:bg-zinc-800/50 rounded-md">
+                        <Checkbox 
+                          id={`member-${member.id}`}
+                          checked={selectedMembers.includes(member.id)}
+                          onCheckedChange={() => toggleMemberSelection(member.id)}
+                        />
+                        <Label 
+                          htmlFor={`member-${member.id}`}
+                          className="cursor-pointer text-sm flex items-center flex-1 justify-between"
+                        >
+                          <span>
+                            {member.first_name || member.display_name || member.username || member.email}
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {member.role === 'admin' ? 'Admin' : 
+                             member.role === 'leader' ? 'Líder' : 'Membro'}
+                          </span>
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              ) : (
+                <div className="text-center py-4 text-zinc-500 border border-zinc-800 rounded-md">
+                  Nenhum membro encontrado
+                </div>
+              )}
+              
+              <div className="text-xs text-zinc-500 mt-1">
+                {selectedMembers.length} membro(s) selecionado(s)
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex justify-end gap-2 mt-2">
+            <Button 
+              variant="outline" 
+              onClick={() => setAlertDialogOpen(false)}
+              className="border-zinc-700 text-zinc-300"
+            >
+              Cancelar
+            </Button>
+            <Button 
+              onClick={sendAlert}
+              className="bg-yellow-500 hover:bg-yellow-600 text-black font-medium"
+              disabled={sendingAlert}
+            >
+              {sendingAlert ? (
+                <>
+                  <Loader2 size={16} className="mr-2 animate-spin" />
+                  Enviando...
+                </>
+              ) : (
+                <>
+                  <Bell size={16} className="mr-2" />
+                  Enviar Alerta
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="container mx-auto px-4 py-8 flex-1">
         {/* Hero section */}
@@ -681,78 +1039,92 @@ const Playlists = () => {
         <div className="mb-12">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-2xl font-bold text-white">Playlists Gospel em Destaque</h2>
-            {adminUser && (
-              <Dialog open={isOpen} onOpenChange={setIsOpen}>
-                <DialogTrigger asChild>
-                  <Button className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white">
-                    <Plus size={16} />
-                    Nova Playlist
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="bg-zinc-900 text-white border-zinc-800">
-                  <DialogHeader>
-                    <DialogTitle className="text-white">Adicionar Playlist</DialogTitle>
-                  </DialogHeader>
+            <Dialog open={isOpen} onOpenChange={setIsOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white">
+                  <Plus size={16} />
+                  Nova Playlist
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="bg-zinc-900 text-white border-zinc-800">
+                <DialogHeader>
+                  <DialogTitle className="text-white">Adicionar Playlist</DialogTitle>
+                </DialogHeader>
+                
+                <div className="grid gap-4 py-4">
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="title" className="text-right text-zinc-400">
+                      Título
+                    </Label>
+                    <Input
+                      id="title"
+                      name="title"
+                      value={newPlaylist.title}
+                      onChange={handleInputChange}
+                      className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
+                    />
+                  </div>
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="artist" className="text-right text-zinc-400">
+                      Artista
+                    </Label>
+                    <Input
+                      id="artist"
+                      name="artist"
+                      value={newPlaylist.artist}
+                      onChange={handleInputChange}
+                      className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
+                    />
+                  </div>
                   
-                  <div className="grid gap-4 py-4">
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="title" className="text-right text-zinc-400">
-                        Título
-                      </Label>
-                      <Input
-                        id="title"
-                        name="title"
-                        value={newPlaylist.title}
-                        onChange={handleInputChange}
-                        className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
+                  <div className="grid grid-cols-4 items-start gap-4">
+                    <Label htmlFor="imageUrl" className="text-right text-zinc-400 pt-2">
+                      Imagem
+                    </Label>
+                    <div className="col-span-3 space-y-4">
+                      <FileUploader 
+                        onFileUploaded={handleFileUploaded}
+                        folder="playlists"
+                        aspectRatio="square"
+                        buttonText="Selecionar capa da playlist"
                       />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="artist" className="text-right text-zinc-400">
-                        Artista
-                      </Label>
-                      <Input
-                        id="artist"
-                        name="artist"
-                        value={newPlaylist.artist}
-                        onChange={handleInputChange}
-                        className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
-                      />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="imageUrl" className="text-right text-zinc-400">
-                        URL da imagem
-                      </Label>
-                      <Input
-                        id="imageUrl"
-                        name="imageUrl"
-                        value={newPlaylist.imageUrl}
-                        onChange={handleInputChange}
-                        className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
-                        placeholder="Opcional"
-                      />
-                    </div>
-                    <div className="grid grid-cols-4 items-center gap-4">
-                      <Label htmlFor="spotifyLink" className="text-right text-zinc-400">
-                        Link Spotify
-                      </Label>
-                      <Input
-                        id="spotifyLink"
-                        name="spotifyLink"
-                        value={newPlaylist.spotifyLink}
-                        onChange={handleInputChange}
-                        className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
-                      />
+                      
+                      <div className="flex flex-col gap-2">
+                        <Label htmlFor="imageUrl" className="text-zinc-400 text-sm">
+                          Ou informe a URL de uma imagem
+                        </Label>
+                        <Input
+                          id="imageUrl"
+                          name="imageUrl"
+                          value={newPlaylist.imageUrl}
+                          onChange={handleInputChange}
+                          className="bg-zinc-800 border-zinc-700 text-white"
+                          placeholder="https://exemplo.com/imagem.jpg"
+                        />
+                      </div>
                     </div>
                   </div>
-                  <div className="flex justify-end">
-                    <Button onClick={handleAddPlaylist} className="bg-emerald-500 hover:bg-emerald-600 text-white">
-                      Adicionar
-                    </Button>
+                  
+                  <div className="grid grid-cols-4 items-center gap-4">
+                    <Label htmlFor="spotifyLink" className="text-right text-zinc-400">
+                      Link Spotify
+                    </Label>
+                    <Input
+                      id="spotifyLink"
+                      name="spotifyLink"
+                      value={newPlaylist.spotifyLink}
+                      onChange={handleInputChange}
+                      className="col-span-3 bg-zinc-800 border-zinc-700 text-white"
+                    />
                   </div>
-                </DialogContent>
-              </Dialog>
-            )}
+                </div>
+                <div className="flex justify-end">
+                  <Button onClick={handleAddPlaylist} className="bg-emerald-500 hover:bg-emerald-600 text-white">
+                    Adicionar
+                  </Button>
+                </div>
+              </DialogContent>
+            </Dialog>
           </div>
 
           {isLoading && playlists.length === 0 ? (

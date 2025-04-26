@@ -1,72 +1,4 @@
-import { supabase } from '@/lib/supabase';
-import { toast } from '@/hooks/use-toast';
-import { User } from '@/types/user';
 import { logger } from '@/lib/utils';
-
-interface WhatsAppMessageConfig {
-  phoneNumber: string;
-  message: string;
-}
-
-interface WhatsAppBotConfig {
-  apiKey: string;
-  apiSecret: string;
-  fromNumber: string;
-}
-
-/**
- * Configuração padrão para o caso de não conseguir carregar do banco
- */
-const DEFAULT_BOT_CONFIG: WhatsAppBotConfig = {
-  apiKey: "demo_key",
-  apiSecret: "demo_secret",
-  fromNumber: "5511999999999"
-};
-
-/**
- * Configuração do serviço de WhatsApp
- * Esta configuração deve ser carregada do Supabase para manter os dados sensíveis seguros
- */
-let botConfig: WhatsAppBotConfig | null = null;
-
-/**
- * Carrega a configuração do WhatsApp do banco de dados
- */
-export const loadWhatsAppBotConfig = async (): Promise<WhatsAppBotConfig> => {
-  try {
-    // Se já temos a configuração em cache, retornamos ela
-    if (botConfig) {
-      return botConfig;
-    }
-
-    // Tenta acessar diretamente a tabela app_config
-    try {
-      const { data, error } = await supabase
-        .from('app_config')
-        .select('*')
-        .eq('key', 'whatsapp_bot_config')
-        .maybeSingle();
-
-      if (!error && data && data.value) {
-        botConfig = data.value as WhatsAppBotConfig;
-        return botConfig;
-      }
-    } catch (tableError) {
-      logger.warn('Erro ao acessar app_config:', tableError);
-    }
-
-    // Se não encontrou configuração, usa a padrão
-    logger.warn('Configuração do WhatsApp não encontrada. Usando configuração padrão');
-    botConfig = DEFAULT_BOT_CONFIG;
-    return botConfig;
-    
-  } catch (error) {
-    logger.error('Erro ao carregar configuração do WhatsApp:', error);
-    logger.warn('Usando configuração padrão do WhatsApp');
-    botConfig = DEFAULT_BOT_CONFIG;
-    return botConfig;
-  }
-};
 
 /**
  * Formata o número de telefone para o formato internacional
@@ -112,91 +44,6 @@ export const formatPhoneNumber = (phoneNumber?: string): string | null => {
 };
 
 /**
- * Função de demonstração para quando estiver em modo de desenvolvimento
- * Simula o envio de mensagem sem realmente chamar a API externa
- */
-const sendDemoMessage = async (config: WhatsAppMessageConfig): Promise<boolean> => {
-  logger.log('🔵 [DEMO] Enviando mensagem via WhatsApp:');
-  logger.log('📱 Para:', config.phoneNumber);
-  logger.log('💬 Mensagem:', config.message);
-  
-  // Simula um pequeno atraso como se estivesse realmente enviando
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  // Simula uma chance de falha de 10% para demonstrar tratamento de erros
-  if (Math.random() < 0.1) {
-    logger.error('❌ [DEMO] Falha simulada no envio da mensagem');
-    return false;
-  }
-  
-  logger.log('✅ [DEMO] Mensagem enviada com sucesso');
-  return true;
-};
-
-/**
- * Envia uma mensagem para o WhatsApp usando a API da Vonage
- */
-export const sendWhatsAppMessage = async (config: WhatsAppMessageConfig): Promise<boolean> => {
-  try {
-    // Carrega a configuração se ainda não foi carregada
-    if (!botConfig) {
-      botConfig = await loadWhatsAppBotConfig();
-    }
-
-    // Formata o número de telefone
-    const formattedPhone = formatPhoneNumber(config.phoneNumber);
-    if (!formattedPhone) {
-      throw new Error('Número de telefone inválido');
-    }
-
-    // Verificar se estamos em modo de demonstração
-    if (
-      botConfig.apiKey === "demo_key" || 
-      botConfig.apiSecret === "demo_secret" || 
-      import.meta.env.DEV
-    ) {
-      return sendDemoMessage(config);
-    }
-
-    // Mensagem direta
-    const messagePayload = {
-      from: botConfig.fromNumber,
-      to: formattedPhone,
-      message_type: "text",
-      text: config.message,
-      channel: "whatsapp"
-    };
-
-    // Envia a mensagem para a API da Vonage
-    const response = await fetch('https://messages-sandbox.nexmo.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Basic ${btoa(`${botConfig.apiKey}:${botConfig.apiSecret}`)}`
-      },
-      body: JSON.stringify(messagePayload)
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Erro ao enviar mensagem: ${JSON.stringify(errorData)}`);
-    }
-
-    logger.log('Mensagem enviada com sucesso para', formattedPhone);
-    return true;
-  } catch (error) {
-    logger.error('Erro ao enviar mensagem via WhatsApp:', error);
-    toast({
-      title: 'Erro ao enviar mensagem via WhatsApp',
-      description: error instanceof Error ? error.message : 'Ocorreu um erro ao enviar a mensagem',
-      variant: 'destructive'
-    });
-    return false;
-  }
-};
-
-/**
  * Obtém um link de WhatsApp para conversa direta com um número
  */
 export const getWhatsAppLink = (phoneNumber?: string, message: string = ''): string | null => {
@@ -227,5 +74,60 @@ export const getWhatsAppLink = (phoneNumber?: string, message: string = ''): str
     logger.error('Erro ao gerar link do WhatsApp:', error);
     // Em caso de erro, retorna apenas o link do número sem mensagem
     return `https://wa.me/${formattedPhone}`;
+  }
+};
+
+/**
+ * Envia uma mensagem para o WhatsApp (versão simulada)
+ * @param phoneNumberOrConfig Número de telefone ou configuração
+ * @param message Mensagem a ser enviada (opcional se phoneNumberOrConfig for um objeto)
+ * @returns Resultado da operação
+ */
+export const sendWhatsAppMessage = async (
+  phoneNumberOrConfig: string | { phoneNumber: string; message: string },
+  message?: string
+): Promise<{success: boolean, error?: string}> => {
+  try {
+    let phoneNumber: string;
+    let messageText: string;
+    
+    if (typeof phoneNumberOrConfig === 'string') {
+      if (!message) {
+        throw new Error('Mensagem é obrigatória quando o primeiro parâmetro é um número de telefone');
+      }
+      phoneNumber = phoneNumberOrConfig;
+      messageText = message;
+    } else {
+      phoneNumber = phoneNumberOrConfig.phoneNumber;
+      messageText = phoneNumberOrConfig.message;
+    }
+
+    // Formata o número de telefone
+    const formattedPhone = formatPhoneNumber(phoneNumber);
+    if (!formattedPhone) {
+      throw new Error('Número de telefone inválido');
+    }
+
+    // Simula o envio da mensagem
+    logger.log('🔵 [SIMULAÇÃO] Enviando mensagem via WhatsApp:');
+    logger.log('📱 Para:', formattedPhone);
+    logger.log('💬 Mensagem:', messageText);
+    
+    // Simula um pequeno atraso
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
+    // Simula uma chance de falha de 5% para demonstrar tratamento de erros
+    if (Math.random() < 0.05) {
+      logger.error('❌ [SIMULAÇÃO] Falha simulada no envio da mensagem');
+      return { success: false, error: 'Falha simulada no envio da mensagem' };
+    }
+    
+    logger.log('✅ [SIMULAÇÃO] Mensagem enviada com sucesso');
+    return { success: true };
+    
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Ocorreu um erro ao enviar a mensagem';
+    logger.error('Erro ao enviar mensagem via WhatsApp:', error);
+    return { success: false, error: errorMessage };
   }
 }; 

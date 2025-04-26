@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider as CustomThemeProvider } from "@/contexts/ThemeContext";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { Toaster } from "@/components/ui/sonner";
+import { ToastifyContainer } from "@/components/ui/react-toastify";
 import { AuthProvider } from "@/hooks/auth";
 import MainLayout from "@/layouts/MainLayout";
 import Index from "@/pages/Index";
@@ -23,6 +23,7 @@ import NotFound from "@/pages/NotFound";
 import Questions from "@/pages/Questions";
 import QuestionDetail from "@/pages/QuestionDetail";
 import PrivateRoute from "@/components/PrivateRoute";
+import PublicOnlyRoute from "@/layouts/PublicOnlyRoute";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import DevTools from "@/pages/DevTools";
 import UpdateAdminRole from "@/pages/UpdateAdminRole";
@@ -36,6 +37,10 @@ import { syncPendingDevotionals, syncPendingComments } from "@/services/devotion
 import NotificationTest from "@/pages/NotificationTest";
 import EventForm from "@/pages/EventForm";
 import UserProfile from "@/pages/UserProfile";
+import UserSearch from './pages/UserSearch';
+import TestPage from "@/pages/TestPage";
+import { initializeBackgroundTasks, shutdownBackgroundTasks } from './lib/startupTasks';
+import { logger } from './lib/utils';
 
 // Lazy load admin pages para melhorar performance
 const Admin = React.lazy(() => import("@/pages/Admin"));
@@ -89,6 +94,27 @@ function App() {
     };
   }, []);
 
+  // Inicializa tarefas de background quando o app é montado
+  useEffect(() => {
+    // Inicializa tarefas de fundo, incluindo o agendador de mensagens WhatsApp
+    try {
+      logger.log('Inicializando aplicação...');
+      initializeBackgroundTasks();
+    } catch (error) {
+      logger.error('Erro ao inicializar tarefas de fundo:', error);
+    }
+
+    // Cleanup: para o agendador quando o componente é desmontado
+    return () => {
+      try {
+        logger.log('Finalizando aplicação...');
+        shutdownBackgroundTasks();
+      } catch (error) {
+        logger.error('Erro ao finalizar tarefas de fundo:', error);
+      }
+    };
+  }, []);
+
   return (
     <CustomThemeProvider>
       <QueryClientProvider client={queryClient}>
@@ -96,40 +122,99 @@ function App() {
           <AuthProvider>
             <BrowserRouter>
               <Routes>
+                {/* Rotas públicas - não requerem autenticação */}
+                <Route path="login" element={
+                  <PublicOnlyRoute>
+                    <Login />
+                  </PublicOnlyRoute>
+                } />
+                
+                <Route path="register" element={
+                  <PublicOnlyRoute>
+                    <Register />
+                  </PublicOnlyRoute>
+                } />
+                
+                <Route path="auth/callback" element={<AuthCallback />} />
+                <Route path="callback" element={<SpotifyCallback />} />
+                
+                {/* Layout principal - todas as rotas dentro deste layout usam MainLayout */}
                 <Route path="/" element={<MainLayout />}>
-                  <Route index element={<Home />} />
-                  <Route path="about" element={<About />} />
-                  <Route path="events" element={<Events />} />
-                  <Route path="events/:id" element={<EventDetail />} />
+                  {/* Página inicial protegida - redireciona para login se não autenticado */}
+                  <Route index element={
+                    <PrivateRoute>
+                      <Home />
+                    </PrivateRoute>
+                  } />
+                  
+                  {/* Rotas básicas - todas protegidas por autenticação */}
+                  <Route path="about" element={
+                    <PrivateRoute>
+                      <About />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="events" element={
+                    <PrivateRoute>
+                      <Events />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="events/:id" element={
+                    <PrivateRoute>
+                      <EventDetail />
+                    </PrivateRoute>
+                  } />
+                  
                   <Route path="events/new" element={
                     <PrivateRoute requireAdmin>
                       <CreateEvent />
                     </PrivateRoute>
                   } />
+                  
                   <Route path="playlists" element={
                     <PrivateRoute requireLeader>
                       <Playlists />
                     </PrivateRoute>
                   } />
+                  
                   <Route path="questions" element={
                     <PrivateRoute>
                       <Questions />
                     </PrivateRoute>
                   } />
+                  
                   <Route path="questions/:id" element={
                     <PrivateRoute requireLeader>
                       <QuestionDetail />
                     </PrivateRoute>
                   } />
-                  <Route path="callback" element={<SpotifyCallback />} />
-                  <Route path="auth/callback" element={<AuthCallback />} />
-                  <Route path="contact" element={<Contact />} />
-                  <Route path="login" element={<Login />} />
-                  <Route path="register" element={<Register />} />
+                  
+                  <Route path="contact" element={
+                    <PrivateRoute>
+                      <Contact />
+                    </PrivateRoute>
+                  } />
+                  
                   <Route path="logout" element={<Logout />} />
-                  <Route path="profile" element={<Profile />} />
-                  <Route path="profile/:userId" element={<Profile />} />
-                  <Route path="biblia" element={<BiblePage />} />
+                  
+                  <Route path="profile" element={
+                    <PrivateRoute>
+                      <Profile />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="profile/:userId" element={
+                    <PrivateRoute>
+                      <Profile />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="biblia" element={
+                    <PrivateRoute>
+                      <BiblePage />
+                    </PrivateRoute>
+                  } />
                   
                   {/* Rotas admin protegidas com lazy loading */}
                   <Route path="admin" element={
@@ -140,12 +225,15 @@ function App() {
                     </React.Suspense>
                   } />
                   
-                  {/* Devotional routes - available to all users */}
+                  {/* Devotional routes - agora também protegidas */}
                   <Route path="devotional" element={
                     <React.Suspense fallback={<div>Carregando...</div>}>
-                      <Devotional />
+                      <PrivateRoute>
+                        <Devotional />
+                      </PrivateRoute>
                     </React.Suspense>
                   } />
+                  
                   <Route path="devotional/new" element={
                     <PrivateRoute requireAdmin>
                       <React.Suspense fallback={<div>Carregando...</div>}>
@@ -153,31 +241,84 @@ function App() {
                       </React.Suspense>
                     </PrivateRoute>
                   } />
+                  
                   <Route path="devotional/:id" element={
                     <React.Suspense fallback={<div>Carregando...</div>}>
-                      <DevotionalDetail />
+                      <PrivateRoute>
+                        <DevotionalDetail />
+                      </PrivateRoute>
                     </React.Suspense>
                   } />
                   
                   {/* Rota de desenvolvimento - Remover em produção */}
-                  <Route path="dev-tools" element={<DevTools />} />
-                  <Route path="update-admin" element={<UpdateAdminRole />} />
-                  <Route path="db-schema" element={<DBSchemaCheck />} />
-                  <Route path="fix-policies" element={<FixPolicies />} />
-                  <Route path="test-notifications" element={<NotificationTest />} />
+                  <Route path="dev-tools" element={
+                    <PrivateRoute requireAdmin>
+                      <DevTools />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="update-admin" element={
+                    <PrivateRoute requireAdmin>
+                      <UpdateAdminRole />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="db-schema" element={
+                    <PrivateRoute requireAdmin>
+                      <DBSchemaCheck />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="fix-policies" element={
+                    <PrivateRoute requireAdmin>
+                      <FixPolicies />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="test-notifications" element={
+                    <PrivateRoute requireAdmin>
+                      <NotificationTest />
+                    </PrivateRoute>
+                  } />
 
                   {/* Add redirect from devotionals to devotional */}
                   <Route path="devotionals" element={<Navigate to="/devotional" replace />} />
 
-                  <Route path="/admin/events/new" element={<EventForm />} />
-                  <Route path="/admin/events/:eventId" element={<EventForm />} />
-                  <Route path="/admin/users/:userId" element={<UserProfile />} />
-
+                  <Route path="/admin/events/new" element={
+                    <PrivateRoute requireAdmin>
+                      <EventForm />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/admin/events/:eventId" element={
+                    <PrivateRoute requireAdmin>
+                      <EventForm />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/admin/users/:userId" element={
+                    <PrivateRoute requireAdmin>
+                      <UserProfile />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/admin/users" element={
+                    <PrivateRoute requireAdmin>
+                      <UserSearch />
+                    </PrivateRoute>
+                  } />
+                  
+                  <Route path="/test" element={
+                    <PrivateRoute requireAdmin>
+                      <TestPage />
+                    </PrivateRoute>
+                  } />
+                  
                   <Route path="*" element={<NotFound />} />
                 </Route>
               </Routes>
             </BrowserRouter>
-            <Toaster />
+            <ToastifyContainer />
           </AuthProvider>
         </TooltipProvider>
       </QueryClientProvider>

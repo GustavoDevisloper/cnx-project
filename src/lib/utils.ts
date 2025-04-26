@@ -25,73 +25,82 @@ export function formatDate(date: string | Date) {
 }
 
 /**
- * Logger seguro que só exibe logs em ambiente de desenvolvimento
- * Substitui as funções nativas console.log, console.error, console.warn
- * em produção, os logs são silenciados
+ * Logger para melhor gerenciamento de logs na aplicação
  */
-export const logger = (() => {
-  // Função interna para verificar se estamos em ambiente de desenvolvimento
-  const isDevEnvironment = () => {
-    try {
-      // Verifica ambiente Vite/Vercel
-      const isViteDev = typeof import.meta.env.DEV !== 'undefined' && import.meta.env.DEV === true;
-      const isNotProd = typeof import.meta.env.PROD !== 'undefined' && !import.meta.env.PROD;
-      const devMode = typeof import.meta.env.MODE !== 'undefined' && import.meta.env.MODE !== 'production';
-      
-      // Verifica Node.js env
-      const notNodeProd = typeof process !== 'undefined' && 
-                          typeof process.env !== 'undefined' && 
-                          process.env.NODE_ENV !== 'production';
-      
-      // Verifica se está em ambiente Vercel pela URL
-      const notVercel = typeof window !== 'undefined' && 
-                       window.location && 
-                       !window.location.hostname.includes('vercel.app');
-                       
-      // Ambiente local de desenvolvimento (localhost)
-      const isLocalhost = typeof window !== 'undefined' && 
-                         window.location && 
-                         (window.location.hostname === 'localhost' || 
-                          window.location.hostname === '127.0.0.1');
-      
-      // Retorna true apenas se estiver realmente em desenvolvimento
-      return (isViteDev || isLocalhost) && notVercel;
-    } catch (e) {
-      // Em caso de erro nas verificações, aja com segurança e não exiba logs
-      return false;
+export const logger = {
+  /**
+   * Log normal
+   */
+  log: (...args: any[]) => {
+    if (import.meta.env.DEV || localStorage.getItem('enableDebugLogs') === 'true') {
+      console.log(...args);
     }
-  };
+  },
   
-  // Retorna o objeto logger com funções que verificam o ambiente
-  return {
-    log: (...args: any[]) => {
-      if (isDevEnvironment()) {
-        console.log(...args);
-      }
-    },
+  /**
+   * Log de erro - sempre exibido
+   */
+  error: (...args: any[]) => {
+    // Adicionando timestamp nos logs de erro para facilitar o diagnóstico
+    const timestamp = new Date().toISOString();
+    console.error(`[${timestamp}] ERROR:`, ...args);
     
-    error: (...args: any[]) => {
-      if (isDevEnvironment()) {
-        console.error(...args);
-      }
-    },
-    
-    warn: (...args: any[]) => {
-      if (isDevEnvironment()) {
-        console.warn(...args);
-      }
-    },
-    
-    info: (...args: any[]) => {
-      if (isDevEnvironment()) {
-        console.info(...args);
-      }
-    },
-    
-    debug: (...args: any[]) => {
-      if (isDevEnvironment()) {
-        console.debug(...args);
+    // Em desenvolvimento, podemos adicionar mais detalhes para facilitar a depuração
+    if (import.meta.env.DEV) {
+      try {
+        // Capturar stack trace para facilitar diagnóstico
+        const stack = new Error().stack;
+        if (stack) {
+          const stackLines = stack.split('\n').slice(2, 5); // Pegar apenas algumas linhas relevantes
+          console.error(`Stack trace:\n${stackLines.join('\n')}`);
+        }
+      } catch (e) {
+        // Ignorar erros na captura de stack trace
       }
     }
-  };
-})();
+  },
+  
+  /**
+   * Log de aviso - sempre exibido
+   */
+  warn: (...args: any[]) => {
+    // Adicionando timestamp nos logs de aviso para facilitar o diagnóstico
+    const timestamp = new Date().toISOString();
+    console.warn(`[${timestamp}] WARN:`, ...args);
+    
+    // Se quisermos registrar erros em um serviço de monitoramento, poderíamos adicionar código aqui
+    // Exemplo: sentryClient.captureWarning(args[0]);
+  },
+  
+  /**
+   * Log para depuração - apenas em desenvolvimento ou quando debug está ativado
+   */
+  debug: (...args: any[]) => {
+    if (import.meta.env.DEV || localStorage.getItem('enableDebugLogs') === 'true') {
+      console.debug('[DEBUG]', ...args);
+    }
+  },
+  
+  /**
+   * Log para informações importantes - sempre exibido
+   */
+  info: (...args: any[]) => {
+    console.info('[INFO]', ...args);
+  },
+  
+  /**
+   * Ativa os logs de debug mesmo em produção (via localStorage)
+   */
+  enableDebugLogs: () => {
+    localStorage.setItem('enableDebugLogs', 'true');
+    console.log('Logs de debug ativados');
+  },
+  
+  /**
+   * Desativa os logs de debug em produção
+   */
+  disableDebugLogs: () => {
+    localStorage.removeItem('enableDebugLogs');
+    console.log('Logs de debug desativados');
+  }
+};

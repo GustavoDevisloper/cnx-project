@@ -7,23 +7,29 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarImage, AvatarFallback } from '@/components/ui/avatar';
 import { toast } from '@/hooks/use-toast';
-import { User as UserIcon, Edit, Save, Calendar, MessageSquare, Upload, Link as LinkIcon, Camera, Check, X, PencilLine, Info, Image, RefreshCw, AlertTriangle } from 'lucide-react';
+import { User as UserIcon, Edit, Save, Calendar, MessageSquare, Upload, Link as LinkIcon, Camera, Check, X, PencilLine, Info, Image, RefreshCw, AlertTriangle, Users, UserPlus, UserCheck, ChevronRight, ArrowLeft } from 'lucide-react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { supabase } from '@/services/supabaseClient';
 import { useAuth } from '@/hooks/auth';
 import useDebounce from '@/hooks/useDebounce';
 import { uploadImage, getAvailableBucket, fileToBase64 } from '@/services/storageService';
+import { Badge } from '@/components/ui/badge';
+import FollowStats from '@/components/FollowStats';
+import { followUser, unfollowUser, isFollowing, getFollowers, getFollowing } from '@/services/followService';
 
 interface ExtendedUser extends User {
   displayName?: string;
   bio?: string;
   avatarUrl?: string;
   createdAt?: string;
-  profileViews?: number;
   username?: string;
   last_login?: string;
+  followersCount?: number;
+  followingCount?: number;
 }
 
 // We'll try multiple bucket names - many Supabase projects start with 'public' bucket
@@ -44,6 +50,8 @@ const Profile = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [storageBucket, setStorageBucket] = useState<string | null>(null);
   const [showUploadDisabledMessage, setShowUploadDisabledMessage] = useState(true);
+  const [isFollowingUser, setIsFollowingUser] = useState(false);
+  const [isLoadingFollow, setIsLoadingFollow] = useState(false);
   
   const [formData, setFormData] = useState({
     displayName: '',
@@ -55,20 +63,20 @@ const Profile = () => {
   const { checkAuth } = useAuth();
   const debouncedFormData = useDebounce(formData, 2000);
 
-  useEffect(() => {
-    console.log("Upload de imagens desativado - usando apenas URLs externas");
-    setStorageBucket(null);
+  // useEffect(() => {
+  //   console.log("Upload de imagens desativado - usando apenas URLs externas");
+  //   setStorageBucket(null);
     
-    if (showUploadDisabledMessage) {
-      toast({
-        title: 'Apenas URLs externas',
-        description: 'O upload de imagens está desativado. Use uma URL de imagem existente.',
-        variant: 'info',
-        duration: 5000
-      });
-      setShowUploadDisabledMessage(false);
-    }
-  }, [showUploadDisabledMessage]);
+  //   if (showUploadDisabledMessage) {
+  //     toast({
+  //       title: 'Apenas URLs externas',
+  //       description: 'O upload de imagens está desativado. Use uma URL de imagem existente.',
+  //       variant: 'info',
+  //       duration: 5000
+  //     });
+  //     setShowUploadDisabledMessage(false);
+  //   }
+  // }, [showUploadDisabledMessage]);
 
   useEffect(() => {
     const fetchUser = async () => {
@@ -88,27 +96,32 @@ const Profile = () => {
         } else {
           profileUser = await getUserById(userId);
           setIsCurrentUser(currentUser?.id === userId);
-          
-          // Se não for o próprio usuário, incrementar visualizações do perfil
-          if (currentUser?.id !== userId && profileUser) {
-            try {
-              // Incrementar contador de visualizações
-              await supabase
-                .from('users')
-                .update({ profile_views: (profileUser.profile_views || 0) + 1 })
-                .eq('id', userId);
-              
-              // Atualizar contagem local para refletir o incremento
-              profileUser.profile_views = (profileUser.profile_views || 0) + 1;
-            } catch (error) {
-              console.error('Erro ao incrementar visualizações:', error);
-            }
-          }
         }
         
         if (!profileUser) {
           navigate('/not-found');
           return;
+        }
+        
+        // Atualizar contadores de seguidores e seguindo com dados do banco
+        if (isCurrentUser || profileUser.id === currentUser?.id) {
+          try {
+            // Buscar contagem real de "seguindo"
+            const following = await getFollowing(profileUser.id);
+            const followingCount = following?.length || 0;
+            
+            // Buscar contagem real de seguidores
+            const followers = await getFollowers(profileUser.id);
+            const followersCount = followers?.length || 0;
+            
+            // Atualizar os contadores no objeto de usuário
+            profileUser.followingCount = followingCount;
+            profileUser.followersCount = followersCount;
+            
+            console.log('Contagens atualizadas do banco:', { followingCount, followersCount });
+          } catch (countError) {
+            console.error('Erro ao buscar contagens de seguidores:', countError);
+          }
         }
         
         // Set default values if not present
@@ -118,11 +131,12 @@ const Profile = () => {
           bio: profileUser.bio || 'Nenhuma biografia disponível.',
           avatarUrl: profileUser.avatar_url || '',
           createdAt: profileUser.created_at || new Date().toISOString(),
-          profileViews: profileUser.profile_views || 0,
           username: profileUser.username || '',
           // Se o campo last_login ainda não existir no banco, usar a data atual para o usuário atual
           // ou uma data recente para outros usuários
-          last_login: profileUser.last_login || (isCurrentUser ? new Date().toISOString() : new Date(Date.now() - 86400000).toISOString())
+          last_login: profileUser.last_login || (isCurrentUser ? new Date().toISOString() : new Date(Date.now() - 86400000).toISOString()),
+          followersCount: profileUser.followersCount || 0,
+          followingCount: profileUser.followingCount || 0
         };
         
         setUser(enhancedUser);
@@ -162,6 +176,18 @@ const Profile = () => {
       }
     }
   }, [debouncedFormData]);
+
+  // Verificar se o usuário atual está seguindo o perfil visualizado
+  useEffect(() => {
+    const checkFollowStatus = async () => {
+      if (!isCurrentUser && user) {
+        const followStatus = await isFollowing(user.id);
+        setIsFollowingUser(followStatus);
+      }
+    };
+    
+    checkFollowStatus();
+  }, [user, isCurrentUser]);
 
   const handleInputChange = async (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -235,7 +261,6 @@ const Profile = () => {
             title: 'Perfil atualizado',
             description: 'Suas informações foram atualizadas com sucesso.'
           });
-          await checkAuth();
           
           // Atualiza o usuário local
           setUser(prev => {
@@ -271,84 +296,79 @@ const Profile = () => {
     setIsUploading(true);
     
     try {
-      // Usar abordagem com base64 redimensionado já que o Storage está com problemas de permissão
-      console.log('Usando abordagem alternativa com base64 redimensionado');
+      // Tentar primeiro o upload diretamente
+      let avatarUrl = null;
       
-      // Otimização: Verificar o tamanho do arquivo antes de processá-lo
-      if (selectedFile.size > 5 * 1024 * 1024) { // 5MB
-        throw new Error('A imagem é muito grande. Por favor, escolha uma imagem menor que 5MB.');
+      try {
+        // Tentar primeiro usar o serviço de armazenamento do Supabase
+        avatarUrl = await uploadImageWithLocalFallback(selectedFile, user.id);
+      } catch (uploadError) {
+        console.error('Erro ao fazer upload para o Storage:', uploadError);
+        // Se falhar, usar o base64 redimensionado
+        avatarUrl = await fileToBase64(selectedFile, 300, 300, 0.9);
       }
       
-      // Usar fileToBase64 do serviço de armazenamento para redimensionar a imagem
-      try {
-        // Importamos a função do storageService
-        const avatarUrl = await fileToBase64(selectedFile, 300, 300, 0.9);
-        
-        if (!avatarUrl) {
-          throw new Error('Não foi possível processar a imagem');
+      if (!avatarUrl) {
+        throw new Error('Não foi possível processar a imagem');
+      }
+      
+      console.log(`Imagem processada com sucesso: ${avatarUrl.substring(0, 30)}...`);
+      
+      // Forçar o recarregamento da imagem removendo-a temporariamente
+      setShouldShowAvatar(false);
+      
+      setFormData((prev) => ({ ...prev, avatarUrl }));
+      
+      // Salvar no perfil do usuário
+      const updateData = { avatar_url: avatarUrl };
+      
+      const updatedUser = await updateUserProfile(
+        user.id,
+        {
+          ...updateData,
         }
+      );
+      
+      if (updatedUser) {
+        // Atualizar o key da imagem para forçar o recarregamento
+        setAvatarKey(Date.now());
         
-        console.log(`Tamanho da string base64: ${avatarUrl.length} caracteres`);
+        // Fechar o diálogo após upload bem-sucedido
+        document.querySelector('.dialog-close')?.dispatchEvent(new MouseEvent('click'));
         
-        // Forçar o recarregamento da imagem removendo-a temporariamente
-        setShouldShowAvatar(false);
+        // Atualiza o usuário local
+        setUser(prev => {
+          if (!prev) return null;
+          return {
+            ...prev,
+            avatar_url: avatarUrl,
+            avatarUrl: avatarUrl
+          };
+        });
         
-        setFormData((prev) => ({ ...prev, avatarUrl }));
-        
-        // Salvar no perfil do usuário
-        const updateData = { avatar_url: avatarUrl };
-        
-        const updatedUser = await updateUserProfile(
-          user.id,
-          {
-            ...updateData,
-          }
-        );
-        
-        if (updatedUser) {
-          // Atualizar o key da imagem para forçar o recarregamento
-          setAvatarKey(Date.now());
+        // Pequeno atraso para garantir que o componente seja remontado
+        setTimeout(() => {
+          // Mostrar a imagem novamente
+          setShouldShowAvatar(true);
           
-          // Fechar o diálogo após upload bem-sucedido
-          document.querySelector('.dialog-close')?.dispatchEvent(new MouseEvent('click'));
+          // Disparar evento personalizado para notificar outros componentes sobre a mudança de avatar
+          window.dispatchEvent(new CustomEvent('user-avatar-changed', { 
+            detail: { 
+              userId: user.id, 
+              avatarUrl,
+              timestamp: Date.now() 
+            }
+          }));
           
-          // Atualiza o usuário local
-          setUser(prev => {
-            if (!prev) return null;
-            return {
-              ...prev,
-              avatar_url: avatarUrl,
-              avatarUrl: avatarUrl
-            };
+          console.log('Avatar atualizado com sucesso');
+          
+          toast({
+            title: 'Foto de perfil atualizada',
+            description: 'Sua foto foi atualizada com sucesso!',
+            duration: 5000,
+            variant: 'success'
           });
-          
-          // Pequeno atraso para garantir que o componente seja remontado
-          setTimeout(() => {
-            // Mostrar a imagem novamente
-            setShouldShowAvatar(true);
-            
-            // Disparar evento personalizado para notificar outros componentes sobre a mudança de avatar
-            window.dispatchEvent(new CustomEvent('user-avatar-changed', { 
-              detail: { 
-                userId: user.id, 
-                avatarUrl,
-                timestamp: Date.now() 
-              }
-            }));
-            
-            console.log('Avatar atualizado com base64 de tamanho reduzido');
-            
-            toast({
-              title: 'Foto de perfil atualizada',
-              description: 'Sua foto foi atualizada com sucesso!',
-              duration: 5000,
-              variant: 'success'
-            });
-          }, 100);
-        }
-      } catch (resizeError) {
-        console.error('Erro ao redimensionar imagem:', resizeError);
-        throw new Error('Não foi possível processar a imagem. Por favor, tente novamente com uma imagem menor.');
+        }, 100);
       }
     } catch (error: any) {
       console.error('Error uploading image:', error);
@@ -490,6 +510,59 @@ const Profile = () => {
     }
   };
 
+  // Manipulador para seguir/deixar de seguir
+  const handleFollowToggle = async () => {
+    if (!user) return;
+    
+    console.log('Tentando seguir/deixar de seguir usuário:', user.id);
+    setIsLoadingFollow(true);
+    
+    try {
+      let success;
+      
+      if (isFollowingUser) {
+        console.log('Tentando deixar de seguir usuário...');
+        success = await unfollowUser(user.id);
+        console.log('Resultado de deixar de seguir:', success);
+        if (success) {
+          setIsFollowingUser(false);
+          // Decrementar contador de seguidores localmente
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              followersCount: Math.max((prev.followersCount || 0) - 1, 0)
+            };
+          });
+        }
+      } else {
+        console.log('Tentando seguir usuário...');
+        success = await followUser(user.id);
+        console.log('Resultado de seguir:', success);
+        if (success) {
+          setIsFollowingUser(true);
+          // Incrementar contador de seguidores localmente
+          setUser(prev => {
+            if (!prev) return null;
+            return {
+              ...prev,
+              followersCount: (prev.followersCount || 0) + 1
+            };
+          });
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao alterar status de seguir:', error);
+      toast({
+        title: 'Erro',
+        description: 'Ocorreu um erro ao processar sua solicitação. Tente novamente mais tarde.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoadingFollow(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="container py-10 flex justify-center">
@@ -520,6 +593,185 @@ const Profile = () => {
     );
   }
 
+  // Renderização principal do perfil de usuário
+  return <ProfileTemplate user={user} isEditing={isEditing} setIsEditing={setIsEditing} isCurrentUser={isCurrentUser} formData={formData} handleInputChange={handleInputChange} handleCancel={handleCancel} avatarMode={avatarMode} setAvatarMode={setAvatarMode} fileInputRef={fileInputRef} handleFileChange={handleFileChange} selectedFile={selectedFile} isUploading={isUploading} handleUploadImage={handleUploadImage} handleUseExternalImage={handleUseExternalImage} avatarKey={avatarKey} shouldShowAvatar={shouldShowAvatar} setAvatarKey={setAvatarKey} getInitials={getInitials} isFollowingUser={isFollowingUser} isLoadingFollow={isLoadingFollow} handleFollowToggle={handleFollowToggle} navigate={navigate} handleSaveField={handleSaveField} />;
+}
+
+// Componente separado para renderizar o template do perfil
+interface ProfileTemplateProps {
+  user: ExtendedUser;
+  isEditing: boolean;
+  setIsEditing: React.Dispatch<React.SetStateAction<boolean>>;
+  isCurrentUser: boolean;
+  formData: {
+    displayName: string;
+    bio: string;
+    avatarUrl: string;
+    username: string;
+  };
+  handleInputChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
+  handleCancel: () => void;
+  avatarMode: 'link' | 'upload';
+  setAvatarMode: React.Dispatch<React.SetStateAction<'link' | 'upload'>>;
+  fileInputRef: React.RefObject<HTMLInputElement>;
+  handleFileChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  selectedFile: File | null;
+  isUploading: boolean;
+  handleUploadImage: () => Promise<void>;
+  handleUseExternalImage: () => Promise<void>;
+  avatarKey: number;
+  shouldShowAvatar: boolean;
+  setAvatarKey: React.Dispatch<React.SetStateAction<number>>;
+  getInitials: (name: string) => string;
+  isFollowingUser: boolean;
+  isLoadingFollow: boolean;
+  handleFollowToggle: () => Promise<void>;
+  navigate: (path: string) => void;
+  handleSaveField: (field: string) => Promise<void>;
+}
+
+const ProfileTemplate = ({ 
+  user, 
+  isEditing, 
+  setIsEditing, 
+  isCurrentUser,
+  formData,
+  handleInputChange,
+  handleCancel,
+  avatarMode,
+  setAvatarMode,
+  fileInputRef,
+  handleFileChange,
+  selectedFile,
+  isUploading,
+  handleUploadImage,
+  handleUseExternalImage,
+  avatarKey,
+  shouldShowAvatar,
+  setAvatarKey,
+  getInitials,
+  isFollowingUser,
+  isLoadingFollow,
+  handleFollowToggle,
+  navigate,
+  handleSaveField
+}: ProfileTemplateProps) => {
+  // Estados para controlar os diálogos de seguidores e seguindo
+  const [followersDialogOpen, setFollowersDialogOpen] = useState(false);
+  const [followingDialogOpen, setFollowingDialogOpen] = useState(false);
+  const [followersList, setFollowersList] = useState<any[]>([]);
+  const [followingList, setFollowingList] = useState<any[]>([]);
+  const [isLoadingFollowers, setIsLoadingFollowers] = useState(false);
+  const [isLoadingFollowing, setIsLoadingFollowing] = useState(false);
+  // Adiciona estados para armazenar as contagens reais
+  const [realFollowersCount, setRealFollowersCount] = useState(user.followersCount || 0);
+  const [realFollowingCount, setRealFollowingCount] = useState(user.followingCount || 0);
+  const isMobile = window.innerWidth < 640;
+
+  // Buscar contagens atualizadas ao renderizar
+  useEffect(() => {
+    const updateCounts = async () => {
+      try {
+        // Buscar seguindo
+        const following = await getFollowing(user.id);
+        setRealFollowingCount(following.length);
+        
+        // Buscar seguidores
+        const followers = await getFollowers(user.id);
+        setRealFollowersCount(followers.length);
+        
+        console.log('Contagens atualizadas:', { 
+          following: following.length, 
+          followers: followers.length 
+        });
+      } catch (error) {
+        console.error('Erro ao atualizar contagens:', error);
+      }
+    };
+    
+    updateCounts();
+  }, [user.id]);
+
+  const handleFollowersClick = () => {
+    setIsLoadingFollowers(true);
+    setFollowersDialogOpen(true);
+    
+    getFollowers(user.id).then(followers => {
+      console.log("Seguidores buscados diretamente:", followers);
+      setFollowersList(followers);
+      setRealFollowersCount(followers.length);
+      setIsLoadingFollowers(false);
+    }).catch(error => {
+      console.error("Erro ao buscar seguidores:", error);
+      setIsLoadingFollowers(false);
+    });
+  };
+
+  const handleFollowingClick = () => {
+    setIsLoadingFollowing(true);
+    setFollowingDialogOpen(true);
+    
+    getFollowing(user.id).then(following => {
+      console.log("Seguindo buscados diretamente:", following);
+      setFollowingList(following);
+      setRealFollowingCount(following.length);
+      setIsLoadingFollowing(false);
+    }).catch(error => {
+      console.error("Erro ao buscar seguindo:", error);
+      setIsLoadingFollowing(false);
+    });
+  };
+
+  // Função para renderizar lista de usuários
+  const renderUserList = (users: any[], isLoading: boolean, type: 'followers' | 'following') => {
+    if (isLoading) {
+      return (
+        <div className="flex justify-center items-center py-10">
+          <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      );
+    }
+
+    if (users.length === 0) {
+      return (
+        <div className="text-center py-8 text-muted-foreground">
+          {type === 'followers' 
+            ? (isCurrentUser ? 'Você ainda não tem seguidores' : 'Este usuário ainda não tem seguidores')
+            : (isCurrentUser ? 'Você ainda não segue ninguém' : 'Este usuário ainda não segue ninguém')
+          }
+        </div>
+      );
+    }
+
+    return (
+      <div className="space-y-3 divide-y divide-muted/30">
+        {users.map((userItem: any) => (
+          <div key={userItem.id} className="flex items-center justify-between pt-3">
+            <div 
+              className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+              onClick={() => navigate(`/profile/${userItem.id}`)}
+            >
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={userItem.avatar_url || undefined} alt={userItem.display_name || userItem.username} />
+                <AvatarFallback>
+                  {getInitials(userItem.display_name || userItem.username)}
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1 min-w-0">
+                <p className="font-medium truncate">
+                  {userItem.display_name || userItem.username}
+                </p>
+                <p className="text-sm text-muted-foreground truncate">
+                  @{userItem.username}
+                </p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <div className="container mx-auto pt-6 max-w-4xl">
       <Card className="mb-6">
@@ -546,17 +798,17 @@ const Profile = () => {
                   )}
                 </Avatar>
                 {isEditing && (
-                <Button 
-                  variant="outline" 
-                  size="icon"
+                  <Button 
+                    variant="outline" 
+                    size="icon"
                     className="absolute bottom-0 right-0 rounded-full bg-background"
                     onClick={() => document.getElementById('avatar-dialog-trigger')?.click()}
-                >
+                  >
                     <Camera className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-            
+                  </Button>
+                )}
+              </div>
+              
               <AlertDialog>
                 <AlertDialogTrigger id="avatar-dialog-trigger"></AlertDialogTrigger>
                 <AlertDialogContent className="sm:max-w-md">
@@ -716,9 +968,9 @@ const Profile = () => {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
-              
-              <div className="flex-1 text-center md:text-left">
-                {isEditing ? (
+            
+            <div className="flex-1 text-center md:text-left">
+              {isEditing ? (
                 <div className="space-y-4">
                   <div>
                     <Label htmlFor="displayName">Nome</Label>
@@ -734,13 +986,13 @@ const Profile = () => {
                   
                   <div>
                     <Label htmlFor="bio">Biografia</Label>
-                      <Textarea
+                    <Textarea
                       id="bio"
-                        name="bio"
-                        value={formData.bio}
-                        onChange={handleInputChange}
+                      name="bio"
+                      value={formData.bio}
+                      onChange={handleInputChange}
                       placeholder="Conte um pouco sobre você..."
-                      className="min-h-[100px]"
+                      className="min-h-[100px] w-full resize-none mt-1"
                     />
                   </div>
                 </div>
@@ -755,21 +1007,54 @@ const Profile = () => {
                   </div>
                 </div>
               )}
-                  
+                
               <div className="mt-6 flex flex-wrap gap-2">
-                  {isEditing && (
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={handleCancel}>
-                        Cancelar
-                      </Button>
+                {!isCurrentUser && (
+                  <Button 
+                    variant={isFollowingUser ? "outline" : "default"}
+                    onClick={() => {
+                      console.log('Botão de seguir clicado!');
+                      handleFollowToggle();
+                    }}
+                    disabled={isLoadingFollow}
+                    className="w-full md:w-auto"
+                  >
+                    {isLoadingFollow ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin mr-2"></span>
+                        {isFollowingUser ? 'Deixando de seguir...' : 'Seguindo...'}
+                      </>
+                    ) : (
+                      <>
+                        {isFollowingUser ? (
+                          <>
+                            <UserCheck className="h-4 w-4 mr-2" />
+                            Seguindo
+                          </>
+                        ) : (
+                          <>
+                            <UserPlus className="h-4 w-4 mr-2" />
+                            Seguir
+                          </>
+                        )}
+                      </>
+                    )}
+                  </Button>
+                )}
+                
+                {isEditing && (
+                  <div className="flex justify-end gap-2">
+                    <Button variant="outline" onClick={handleCancel}>
+                      Cancelar
+                    </Button>
                     <Button onClick={() => setIsEditing(false)}>
                       <Save className="h-4 w-4 mr-2" />
                       Concluir edição
-                      </Button>
-                    </div>
-                  )}
+                    </Button>
+                  </div>
+                )}
                 
-                {!isEditing && (
+                {!isEditing && isCurrentUser && (
                   <Button onClick={() => setIsEditing(true)}>
                     <Edit className="h-4 w-4 mr-2" />
                     Editar perfil
@@ -803,43 +1088,67 @@ const Profile = () => {
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
-                <div>
-                  <h3 className="font-medium text-sm text-muted-foreground">Membro desde</h3>
-                  <p>{new Date(user.created_at ?? '').toLocaleDateString()}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-muted-foreground">Visualizações do perfil</h3>
-                  <p>{user.profileViews || 0}</p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-muted-foreground">Último acesso</h3>
-                  <p>
-                    {(() => {
-                      try {
-                        // Se last_login não existir, use a data atual (para o usuário atual) 
-                        // ou uma data recente (para outros usuários)
-                        const lastLogin = user.last_login || 
-                          (isCurrentUser ? new Date().toISOString() : new Date(Date.now() - 86400000).toISOString());
-                        const date = new Date(lastLogin);
-                        return `${date.toLocaleDateString()} às ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-                      } catch (e) {
-                        return "Data não disponível";
-                      }
-                    })()}
-                  </p>
-                </div>
-                <div>
-                  <h3 className="font-medium text-sm text-muted-foreground">Função</h3>
-                  <div className="mt-1">
-                    <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                      {user.role}
-                    </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <h3 className="font-medium text-sm text-muted-foreground">Membro desde</h3>
+                    <p>{new Date(user.created_at ?? '').toLocaleDateString()}</p>
                   </div>
+                  <div>
+                    <h3 className="font-medium text-sm text-muted-foreground">Último login</h3>
+                    <p>{user.last_login ? new Date(user.last_login).toLocaleDateString() : 'Desconhecido'}</p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <Card className="border border-muted/30">
+                      <CardHeader className="pb-2">
+                        <CardTitle className="text-lg flex items-center">
+                          <Users className="h-5 w-5 mr-2" />
+                          Conexões
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="flex flex-col gap-2">
+                          <div 
+                            className="flex items-center justify-between cursor-pointer hover:bg-muted/30 p-2 rounded" 
+                            onClick={handleFollowersClick}
+                          >
+                            <div className="flex items-center">
+                              <span className="font-medium mr-2">{realFollowersCount}</span>
+                              <span className="text-muted-foreground">seguidores</span>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                          
+                          <div 
+                            className="flex items-center justify-between cursor-pointer hover:bg-muted/30 p-2 rounded" 
+                            onClick={handleFollowingClick}
+                          >
+                            <div className="flex items-center">
+                              <span className="font-medium mr-2">{realFollowingCount}</span>
+                              <span className="text-muted-foreground">seguindo</span>
+                            </div>
+                            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                  {user.role === 'admin' && (
+                    <div>
+                      <h3 className="font-medium text-sm text-muted-foreground">Função</h3>
+                      <Badge variant="default" className="mt-1">Administrador</Badge>
+                    </div>
+                  )}
+                  {user.role === 'leader' && (
+                    <div>
+                      <h3 className="font-medium text-sm text-muted-foreground">Função</h3>
+                      <Badge variant="secondary" className="mt-1">Líder</Badge>
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>
           </Card>
-              </TabsContent>
+        </TabsContent>
               
         <TabsContent value="activity">
           <Card>
@@ -850,7 +1159,7 @@ const Profile = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-                <div className="space-y-4">
+              <div className="space-y-4">
                 <div className="flex flex-col gap-4">
                   <div className="text-muted-foreground text-center py-8">
                     Nenhuma atividade recente para exibir.
@@ -859,10 +1168,87 @@ const Profile = () => {
               </div>
             </CardContent>
           </Card>
-              </TabsContent>
-            </Tabs>
+        </TabsContent>
+      </Tabs>
+
+      {/* Diálogos para seguidores e seguindo */}
+      {/* Dialog para desktop */}
+      <Dialog open={followersDialogOpen} onOpenChange={setFollowersDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Seguidores</DialogTitle>
+            <DialogDescription>
+              {isCurrentUser ? 'Seus' : 'Os'} seguidores ({followersList.length})
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="max-h-[60vh] overflow-y-auto">
+            {renderUserList(followersList, isLoadingFollowers, 'followers')}
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      <Dialog open={followingDialogOpen} onOpenChange={setFollowingDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Seguindo</DialogTitle>
+            <DialogDescription>
+              {isCurrentUser ? 'Você' : 'Este usuário'} segue ({followingList.length})
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="max-h-[60vh] overflow-y-auto">
+            {renderUserList(followingList, isLoadingFollowing, 'following')}
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Sheet para mobile */}
+      {isMobile && (
+        <>
+          <Sheet open={followersDialogOpen} onOpenChange={setFollowersDialogOpen}>
+            <SheetContent side="bottom" className="h-[80vh]">
+              <SheetHeader className="mb-6">
+                <SheetTitle>Seguidores</SheetTitle>
+                <SheetDescription>
+                  {isCurrentUser ? 'Seus' : 'Os'} seguidores ({followersList.length})
+                </SheetDescription>
+              </SheetHeader>
+              
+              {renderUserList(followersList, isLoadingFollowers, 'followers')}
+              
+              <div className="mt-4 flex justify-end">
+                <Button variant="outline" onClick={() => setFollowersDialogOpen(false)}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Voltar
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+          
+          <Sheet open={followingDialogOpen} onOpenChange={setFollowingDialogOpen}>
+            <SheetContent side="bottom" className="h-[80vh]">
+              <SheetHeader className="mb-6">
+                <SheetTitle>Seguindo</SheetTitle>
+                <SheetDescription>
+                  {isCurrentUser ? 'Você' : 'Este usuário'} segue ({followingList.length})
+                </SheetDescription>
+              </SheetHeader>
+              
+              {renderUserList(followingList, isLoadingFollowing, 'following')}
+              
+              <div className="mt-4 flex justify-end">
+                <Button variant="outline" onClick={() => setFollowingDialogOpen(false)}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Voltar
+                </Button>
+              </div>
+            </SheetContent>
+          </Sheet>
+        </>
+      )}
     </div>
   );
-};
+}
 
 export default Profile; 

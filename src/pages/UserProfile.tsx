@@ -335,13 +335,6 @@ export default function UserProfile() {
                     
                     <Card>
                       <CardContent className="p-4">
-                        <p className="text-sm text-muted-foreground">Total de logins</p>
-                        <p className="text-xl font-semibold">{user.loginCount}</p>
-                      </CardContent>
-                    </Card>
-                    
-                    <Card>
-                      <CardContent className="p-4">
                         <p className="text-sm text-muted-foreground">Visualizações de perfil</p>
                         <p className="text-xl font-semibold">{user.profileViews}</p>
                       </CardContent>

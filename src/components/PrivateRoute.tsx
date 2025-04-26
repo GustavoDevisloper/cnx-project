@@ -1,10 +1,9 @@
-import { ReactNode, useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { isAdmin, isLeader, isAuthenticated } from '@/services/authService';
-import { Spinner } from '@/components/ui/spinner';
+import { isAuthenticated, isAdmin, isLeader } from '@/services/authService';
 
 interface PrivateRouteProps {
-  children: ReactNode;
+  children: React.ReactNode;
   requireAdmin?: boolean;
   requireLeader?: boolean;
 }
@@ -89,11 +88,19 @@ export default function PrivateRoute({
     if (isNotAuthenticated) {
       // Redirecionar para login com URL de retorno
       const returnPath = encodeURIComponent(location.pathname + location.search);
+      
+      // Log para debugging
+      console.log(`🔀 Redirecionando para login (usuário não autenticado). URL de retorno: ${returnPath}`);
+      
+      // Salvar o caminho original no sessionStorage para usar após o login
+      sessionStorage.setItem('returnTo', location.pathname + location.search);
+      
       return <Navigate to={`/login?redirect=${returnPath}`} replace />;
     }
     
-    // Se está autenticado mas não tem permissão, redirecionar para home
-    return <Navigate to="/" replace />;
+    // Se está autenticado mas não tem permissão, redirecionar para home com mensagem
+    console.log(`🚫 Usuário autenticado mas sem permissão para ${location.pathname}`);
+    return <Navigate to="/" state={{ message: 'Você não tem permissão para acessar esta página' }} replace />;
   }
 
   return <>{children}</>;

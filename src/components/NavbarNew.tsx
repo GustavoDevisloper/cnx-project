@@ -16,6 +16,7 @@ import {
 import { User as UserType } from '@/services/authService';
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import NotificationCenter from "@/components/NotificationCenter";
+import ProfileSearchBar from '@/components/ProfileSearchBar';
 
 const NavbarNew = () => {
   const [scrolled, setScrolled] = useState(false);
@@ -320,11 +321,21 @@ const NavbarNew = () => {
           )}
         </nav>
         
-        <div className="flex items-center space-x-4">
+        <div className="hidden md:flex items-center space-x-4">
           {/* Adicionar NotificationCenter apenas para usuários autenticados */}
           {authenticated && <NotificationCenter />}
           
           <ThemeSwitcher />
+          
+          {authenticated && (
+            <div className="w-48 mx-2">
+              <ProfileSearchBar 
+                placeholder="Buscar pessoas..."
+                maxResults={4}
+                className="hidden md:block" 
+              />
+            </div>
+          )}
           
           {!isAuthPage && (
             authenticated ? (
@@ -364,7 +375,7 @@ const NavbarNew = () => {
                         )}
                       </Avatar>
                       <div>
-                        <span className="font-semibold">{currentUser?.display_name || 'Usuário'}</span>
+                        <span className="font-semibold">{currentUser?.display_name}</span>
                         <span className="text-xs text-muted-foreground block">{currentUser?.email}</span>
                       </div>
                     </div>
