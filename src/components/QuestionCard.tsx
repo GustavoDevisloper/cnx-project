@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
 import { deleteQuestion } from "@/services/questionService";
 import { Question } from "@/types/question";
-import { Trash2, Clock, CheckCircle2 } from "lucide-react";
+import { Trash2, Clock, CheckCircle2, Lock } from "lucide-react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
@@ -22,14 +22,17 @@ import {
 
 interface QuestionCardProps {
   question: Question;
-  onDelete: () => void;
+  onDelete?: () => void;
+  showAnswer?: boolean;
 }
 
-export function QuestionCard({ question, onDelete }: QuestionCardProps) {
+export function QuestionCard({ question, onDelete, showAnswer = false }: QuestionCardProps) {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
 
   const handleDelete = async () => {
+    if (!onDelete) return;
+    
     setIsDeleting(true);
     try {
       const success = await deleteQuestion(question.id);
@@ -94,17 +97,26 @@ export function QuestionCard({ question, onDelete }: QuestionCardProps) {
           
           {question.answered && (
             <div className="mt-4 bg-muted p-3 rounded-md">
-              <div className="font-medium mb-1">Resposta do líder:</div>
-              <p>{question.answer}</p>
-              <div className="text-xs text-muted-foreground mt-2">
-                Respondido por {question.answeredByName}
-              </div>
+              {showAnswer ? (
+                <>
+                  <div className="font-medium mb-1">Resposta do líder:</div>
+                  <p>{question.answer}</p>
+                  <div className="text-xs text-muted-foreground mt-2">
+                    Respondido por {question.answeredByName}
+                  </div>
+                </>
+              ) : (
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Lock size={16} />
+                  <span>Esta resposta é privada e só pode ser vista pelo autor da pergunta</span>
+                </div>
+              )}
             </div>
           )}
         </div>
       </CardContent>
       
-      {!question.answered && (
+      {!question.answered && onDelete && (
         <CardFooter className="flex justify-end">
           <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
             <AlertDialogTrigger asChild>

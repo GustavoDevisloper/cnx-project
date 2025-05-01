@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { getQuestionById, answerQuestion } from '@/services/questionService';
+import { getQuestionById, answerQuestion, canViewAnswer } from '@/services/questionService';
 import { Question, QuestionDB, convertDBQuestionToUI } from '@/types/question';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -21,6 +21,7 @@ export default function QuestionDetail() {
   const [submitting, setSubmitting] = useState(false);
   const [databaseError, setDatabaseError] = useState<{code?: string, message?: string} | null>(null);
   const [canAnswerQuestions, setCanAnswerQuestions] = useState(false);
+  const [canViewQuestionAnswer, setCanViewQuestionAnswer] = useState(false);
 
   useEffect(() => {
     const checkPermissions = async () => {
@@ -45,8 +46,12 @@ export default function QuestionDetail() {
           const uiQuestion = convertDBQuestionToUI(data);
           setQuestion(uiQuestion);
           
-          // Se já tiver resposta, preencher o campo
-          if (data.answer) {
+          // Verificar se o usuário pode ver a resposta
+          const canView = await canViewAnswer(data);
+          setCanViewQuestionAnswer(canView);
+          
+          // Se já tiver resposta e o usuário pode ver, preencher o campo
+          if (data.answer && canView) {
             setAnswer(data.answer);
           }
         }
@@ -186,15 +191,21 @@ export default function QuestionDetail() {
               </div>
               
               {question.answered ? (
-                <div>
-                  <h3 className="text-lg font-semibold mb-2">Resposta</h3>
-                  <div className="bg-muted p-4 rounded-md whitespace-pre-line">
-                    {question.answer}
+                canViewQuestionAnswer ? (
+                  <div>
+                    <h3 className="text-lg font-semibold mb-2">Resposta</h3>
+                    <div className="bg-muted p-4 rounded-md whitespace-pre-line">
+                      {question.answer}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Respondida por {question.answeredByName}
+                    </p>
                   </div>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    Respondida por {question.answeredByName}
-                  </p>
-                </div>
+                ) : (
+                  <div className="bg-muted p-4 rounded-md">
+                    <p>Esta pergunta já foi respondida, mas você não tem permissão para ver a resposta.</p>
+                  </div>
+                )
               ) : canAnswerQuestions ? (
                 <div>
                   <h3 className="text-lg font-semibold mb-2">Sua resposta</h3>

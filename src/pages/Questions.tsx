@@ -8,8 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { QuestionCard } from "@/components/QuestionCard";
 import { PublicQuestionCard } from "@/components/PublicQuestionCard";
 import { toast } from "@/hooks/use-toast";
-import { isAuthenticated, getCurrentUser, isAdmin } from "@/services/authService";
-import { addQuestion, getUserQuestions, getPublicQuestions } from "@/services/questionService";
+import { isAuthenticated, getCurrentUser, isAdmin, isLeader } from "@/services/authService";
+import { addQuestion, getUserQuestions, getPublicQuestions, canViewAnswer } from "@/services/questionService";
 import { Question } from "@/types/question";
 import { MessageCircleQuestion, Lightbulb, Send } from "lucide-react";
 import QuestionsDatabaseFix from "@/components/QuestionsDatabaseFix";
@@ -24,6 +24,7 @@ export default function Questions() {
   const [isLoading, setIsLoading] = useState(true);
   const [databaseError, setDatabaseError] = useState(false);
   const [isUserAdmin, setIsUserAdmin] = useState(false);
+  const [isUserLeader, setIsUserLeader] = useState(false);
   const navigate = useNavigate();
 
   // Function to check auth status and update state accordingly
@@ -39,10 +40,12 @@ export default function Questions() {
         setIsUserLoggedIn(userLoggedIn);
       }
       
-      // Verifica se o usuário é admin
+      // Verifica se o usuário é admin ou líder
       if (userLoggedIn) {
         const adminStatus = await isAdmin();
+        const leaderStatus = await isLeader();
         setIsUserAdmin(adminStatus);
+        setIsUserLeader(leaderStatus);
       }
       
       // Reload user questions if logged in
@@ -72,16 +75,23 @@ export default function Questions() {
   const loadQuestions = useCallback(async () => {
     try {
       setIsLoading(true);
-      // Load public questions regardless of auth status
-      const publicQs = await getPublicQuestions();
-      setPublicQuestions(publicQs);
+      
+      // Se o usuário for admin ou líder, carrega todas as perguntas
+      if (isUserAdmin || isUserLeader) {
+        const publicQs = await getPublicQuestions();
+        setPublicQuestions(publicQs);
+      } else {
+        // Se não for admin nem líder, carrega apenas as perguntas do usuário
+        const userQs = await getUserQuestions();
+        setPublicQuestions(userQs);
+      }
     } catch (error) {
       console.error("Error loading questions:", error);
       setPublicQuestions([]);
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [isUserAdmin, isUserLeader]);
 
   useEffect(() => {
     document.title = "Conexão | Dúvidas";
@@ -319,30 +329,26 @@ export default function Questions() {
           </TabsContent>
           
           <TabsContent value="public-answers">
-            {isLoading ? (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-6 text-muted-foreground">
-                    <p>Carregando respostas...</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : publicQuestions.length === 0 ? (
-              <Card>
-                <CardContent className="pt-6">
-                  <div className="text-center py-6 text-muted-foreground">
-                    <Lightbulb size={48} className="mx-auto mb-2 opacity-30" />
-                    <p>Ainda não há respostas públicas disponíveis</p>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {publicQuestions.map((q) => (
-                  <PublicQuestionCard key={q.id} question={q} />
-                ))}
-              </div>
-            )}
+            <div className="space-y-4">
+              {isLoading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto"></div>
+                  <p className="mt-4 text-muted-foreground">Carregando perguntas...</p>
+                </div>
+              ) : publicQuestions.length === 0 ? (
+                <div className="text-center py-8">
+                  <p className="text-muted-foreground">Nenhuma pergunta encontrada</p>
+                </div>
+              ) : (
+                publicQuestions.map((q) => (
+                  <QuestionCard 
+                    key={q.id} 
+                    question={q}
+                    showAnswer={isUserAdmin || isUserLeader || q.user_id === getCurrentUser()?.id}
+                  />
+                ))
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </div>

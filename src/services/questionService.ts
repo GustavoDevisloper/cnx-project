@@ -594,4 +594,23 @@ export const deleteQuestion = async (id: string): Promise<boolean> => {
     console.error('Erro ao excluir pergunta:', error);
     throw error;
   }
+};
+
+// Verificar se o usuário tem permissão para ver a resposta
+export const canViewAnswer = async (question: QuestionDB): Promise<boolean> => {
+  try {
+    const user = await getCurrentUser();
+    if (!user) return false;
+
+    // Administradores e líderes podem ver todas as respostas
+    const isUserAdmin = user.role === 'admin';
+    const isUserLeader = user.role === 'leader';
+    if (isUserAdmin || isUserLeader) return true;
+
+    // O autor da pergunta pode ver sua própria resposta
+    return user.id === question.user_id;
+  } catch (error) {
+    console.error('Erro ao verificar permissão de visualização:', error);
+    return false;
+  }
 }; 
